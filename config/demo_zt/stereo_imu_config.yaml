@@ -1,0 +1,80 @@
+%YAML:1.0
+
+#common parameters
+#support: 1 imu 1 cam; 1 imu 2 cam: 2 cam; 
+imu: 1         
+num_of_cam: 2  
+
+imu_topic: "/imu0"
+image0_topic: "/cam0/image_raw"
+image1_topic: "/cam1/image_raw"
+output_path: "/home/tzhang/Workspaces/VINS_FUSION/output/demo_zt"
+
+cam0_calib: "cam0_pinhole.yaml"
+cam1_calib: "cam1_pinhole.yaml"
+image_width: 640
+image_height: 480
+   
+
+# Extrinsic parameter between IMU and Camera.
+estimate_extrinsic: 1   # 0  Have an accurate extrinsic parameters. We will trust the following imu^R_cam, imu^T_cam, don't change it.  #设置为1结果不好  20190315
+                        # 1  Have an initial guess about extrinsic parameters. We will optimize around your initial guess.
+#cam0 to body
+body_T_cam0: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: d
+#   data: [0.9992713233075703, 0.03812901735491006, 0.0017321809046171519, -0.0822522625628521,
+#           0.008528469382104647, -0.26728590594094515, 0.9635795295123941, 0.033591794721521455,
+#           0.03720332814595835, -0.9628626187161267, -0.2674163230881521, -0.02478302491719382,
+#           0, 0, 0, 1]
+
+   data:  [0.999271323307570,0.00852846938210465,0.0372033281459584,0.0828278516718943,
+           0.0381290173549101,-0.267285905940945,-0.962862618716127,-0.0117478370404125,
+           0.00173218090461715,0.963579529512394,-0.267416323088152,-0.0388532753530257,
+           0, 0, 0, 1]
+
+#cam1 to body
+body_T_cam1: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: d
+#   data: [0.9986991542461556, 0.04972483919770584, -0.011288918228761612, -0.15068469001820062,
+#          0.024099715438827045, -0.2652008129674357, 0.9638919713936717, 0.03135921088716902,
+#          0.044935542989719524, -0.9629101563324448, -0.26605418209087706, -0.025407035724805686,
+#          0, 0, 0, 1]
+   data: [0.998699154246156,0.0240997154388270,0.0449355429897195,0.150874603366308,
+          0.0497248391977059,-0.265200812967436,-0.962910156332445,-0.00865543253971100,
+          -0.0112889182287616,0.963891971393672,-0.266054182090877,-0.0386876068564419,
+          0, 0, 0, 1]
+#Multiple thread support
+multiple_thread: 1
+
+#feature traker paprameters
+max_cnt: 150            # max feature number in feature tracking
+min_dist: 30            # min distance between two features 
+freq: 10                # frequence (Hz) of publish tracking result. At least 10Hz for good estimation. If set 0, the frequence will be same as raw image 
+F_threshold: 1.0        # ransac threshold (pixel)
+show_track: 1           # publish tracking image as topic
+flow_back: 1            # perform forward and backward optical flow to improve feature tracking accuracy
+
+#optimization parameters
+max_solver_time: 0.04  # max solver itration time (ms), to guarantee real time
+max_num_iterations: 8   # max solver itrations, to guarantee real time
+keyframe_parallax: 10.0 # keyframe selection threshold (pixel)
+
+#imu parameters       The more accurate parameters you provide, the better performance
+acc_n: 0.01          # accelerometer measurement noise standard deviation. 
+gyr_n: 0.004         # gyroscope measurement noise standard deviation.     
+acc_w: 0.0002        # accelerometer bias random work noise standard deviation.  
+gyr_w: 4.0e-06       # gyroscope bias random work noise standard deviation.     
+g_norm: 9.81007     # gravity magnitude
+
+#unsynchronization parameters
+estimate_td: 0                      # online estimate time offset between camera and imu
+td: 0.004846877718478031                             # initial value of time offset. unit: s. readed image clock + td = real image clock (IMU clock)
+
+#loop closure parameters
+load_previous_pose_graph: 0        # load and reuse previous pose graph; load from 'pose_graph_save_path'
+pose_graph_save_path: "/home/tzhang/Workspaces/VINS_FUSION/output/pose_graph/" # save and load path
+save_image: 0                   # save image in pose graph for visualization prupose; you can close this function by setting 0 

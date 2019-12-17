@@ -1,0 +1,56 @@
+%YAML:1.0
+
+#common parameters
+#support: 1 imu 1 cam; 1 imu 2 cam: 2 cam; 
+imu: 0         
+num_of_cam: 2  
+
+imu_topic: "/imu0"
+image0_topic: "/cam0/image_raw"
+image1_topic: "/cam1/image_raw"
+output_path: "/home/tzhang/Workspaces/VINS_FUSION/output/demo_zt"
+
+cam0_calib: "cam0_pinhole.yaml"
+cam1_calib: "cam1_pinhole.yaml"
+image_width: 640
+image_height: 480
+   
+
+# Extrinsic parameter between IMU and Camera.
+estimate_extrinsic: 1   # 0  Have an accurate extrinsic parameters. We will trust the following imu^R_cam, imu^T_cam, don't change it.
+                        # 1  Have an initial guess about extrinsic parameters. We will optimize around your initial guess.
+#cam0 to body
+body_T_cam0: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: d
+   data:  [0.999271323307570,0.00852846938210465,0.0372033281459584,0.0828278516718943,
+           0.0381290173549101,-0.267285905940945,-0.962862618716127,-0.0117478370404125,
+           0.00173218090461715,0.963579529512394,-0.267416323088152,-0.0388532753530257,
+           0, 0, 0, 1]
+
+#cam1 to body
+body_T_cam1: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: d
+   data: [0.998699154246156,0.0240997154388270,0.0449355429897195,0.150874603366308,
+          0.0497248391977059,-0.265200812967436,-0.962910156332445,-0.00865543253971100,
+          -0.0112889182287616,0.963891971393672,-0.266054182090877,-0.0386876068564419,
+          0, 0, 0, 1]
+
+#Multiple thread support
+multiple_thread: 1
+
+#feature traker paprameters
+max_cnt: 150            # max feature number in feature tracking
+min_dist: 30            # min distance between two features 
+freq: 10                # frequence (Hz) of publish tracking result. At least 10Hz for good estimation. If set 0, the frequence will be same as raw image 
+F_threshold: 1.0        # ransac threshold (pixel)
+show_track: 1           # publish tracking image as topic
+flow_back: 1            # perform forward and backward optical flow to improve feature tracking accuracy
+
+#optimization parameters
+max_solver_time: 0.04  # max solver itration time (ms), to guarantee real time
+max_num_iterations: 8   # max solver itrations, to guarantee real time
+keyframe_parallax: 10.0 # keyframe selection threshold (pixel)
