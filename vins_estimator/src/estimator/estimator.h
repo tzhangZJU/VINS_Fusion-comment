@@ -113,7 +113,7 @@ class Estimator
     Matrix3d ric[2];  //存储双目与imu之间的外参 tzhang ric[0] = R_i_cl; ric[1] = R_i_cr;
     Vector3d tic[2];  //tic[0] = t_i_cl; tic[1] = t_i_cr;
 
-    Vector3d        Ps[(WINDOW_SIZE + 1)];
+    Vector3d        Ps[(WINDOW_SIZE + 1)];  //滑窗中的状态向量 P、V、Q、Ba、Bg
     Vector3d        Vs[(WINDOW_SIZE + 1)];
     Matrix3d        Rs[(WINDOW_SIZE + 1)];
     Vector3d        Bas[(WINDOW_SIZE + 1)];
@@ -122,7 +122,7 @@ class Estimator
 
     Matrix3d back_R0, last_R, last_R0;
     Vector3d back_P0, last_P, last_P0;
-    double Headers[(WINDOW_SIZE + 1)];
+    double Headers[(WINDOW_SIZE + 1)];  //滑窗中图像帧的时间戳
 
     IntegrationBase *pre_integrations[(WINDOW_SIZE + 1)];
     Vector3d acc_0, gyr_0;
@@ -162,7 +162,7 @@ class Estimator
     MarginalizationInfo *last_marginalization_info;
 
     vector<double *> last_marginalization_parameter_blocks;  //保存上一次边缘化后，保留的状态向量
-    map<double, ImageFrame> all_image_frame;
+    map<double, ImageFrame> all_image_frame;  //存储所有的图像帧数据
     IntegrationBase *tmp_pre_integration;
 
     Eigen::Vector3d initP;
@@ -172,6 +172,6 @@ class Estimator
     Eigen::Vector3d latest_P, latest_V, latest_Ba, latest_Bg, latest_acc_0, latest_gyr_0;
     Eigen::Quaterniond latest_Q;
 
-    bool initFirstPoseFlag;  //标记是否是第一帧 tzhang
+    bool initFirstPoseFlag;  //标记位姿是否初始化 tzhang
     bool initThreadFlag;
 };

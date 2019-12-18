@@ -203,7 +203,7 @@ namespace cv {
 
 bool MotionEstimator::solveRelativeRT(const vector<pair<Vector3d, Vector3d>> &corres, Matrix3d &Rotation, Vector3d &Translation)
 {
-    if (corres.size() >= 15)
+    if (corres.size() >= 15)  //共视点数目至少为15（PS：Estimator::relativePose已经进行了共视点数目判断，双重保险）
     {
         vector<cv::Point2f> ll, rr;
         for (int i = 0; i < int(corres.size()); i++)
@@ -212,22 +212,22 @@ bool MotionEstimator::solveRelativeRT(const vector<pair<Vector3d, Vector3d>> &co
             rr.push_back(cv::Point2f(corres[i].second(0), corres[i].second(1)));
         }
         cv::Mat mask;
-        cv::Mat E = cv::findFundamentalMat(ll, rr, cv::FM_RANSAC, 0.3 / 460, 0.99, mask);
-        cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);
+        cv::Mat E = cv::findFundamentalMat(ll, rr, cv::FM_RANSAC, 0.3 / 460, 0.99, mask);  //通过FM_RANSAC方法计算本质矩阵E
+        cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);  //因为上述点对在归一化相机坐标系下定义，因此内参矩阵为单位阵
         cv::Mat rot, trans;
-        int inlier_cnt = cv::recoverPose(E, ll, rr, cameraMatrix, rot, trans, mask);
+        int inlier_cnt = cv::recoverPose(E, ll, rr, cameraMatrix, rot, trans, mask);  //通过本质矩阵计算旋转矩阵、平移向量，并统计内点数目
         //cout << "inlier_cnt " << inlier_cnt << endl;
 
         Eigen::Matrix3d R;
         Eigen::Vector3d T;
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 3; i++)  //可直接使用cv::cv2eigen
         {   
             T(i) = trans.at<double>(i, 0);
             for (int j = 0; j < 3; j++)
                 R(i, j) = rot.at<double>(i, j);
         }
 
-        Rotation = R.transpose();
+        Rotation = R.transpose();  //由于上述求解结果为ll到rr之间的位姿变换；而后续使用，需要rr到ll的变换（WINDOW_SIZE变换到i），因此进行下述求逆后再返回
         Translation = -R.transpose() * T;
         if(inlier_cnt > 12)
             return true;

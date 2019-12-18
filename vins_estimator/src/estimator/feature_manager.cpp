@@ -34,7 +34,7 @@ void FeatureManager::clearState()
     feature.clear();
 }
 
-int FeatureManager::getFeatureCount()
+int FeatureManager::getFeatureCount()  // 返回观测次数超过4次的路标点数目
 {
     int cnt = 0;
     for (auto &it : feature)
@@ -92,13 +92,14 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
 
     //if (frame_count < 2 || last_track_num < 20)
     //if (frame_count < 2 || last_track_num < 20 || new_feature_num > 0.5 * last_track_num)
-    if (frame_count < 2 || last_track_num < 20 || long_track_num < 40 || new_feature_num > 0.5 * last_track_num)
+    if (frame_count < 2 || last_track_num < 20 || long_track_num < 40 || new_feature_num > 0.5 * last_track_num)  // 关键帧判断的策略1（PS:long_track_num < 40没啥用）
+    //a、滑窗中图像帧数目少于2帧;  b、跟踪到的路标点数量少于20个;  c、新观测到的路标点数目大于0.5倍跟踪的路标点数目;
         return true;
 
-    for (auto &it_per_id : feature)
+    for (auto &it_per_id : feature)  //关键帧判断的策略2（视差足够大（PS:注意计算视差的路标点需满足条件判断））：
     {
-        if (it_per_id.start_frame <= frame_count - 2 &&
-            it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1)
+        if (it_per_id.start_frame <= frame_count - 2 &&  //最开始观测到该路标点的图像帧，距离最新帧不小于2
+            it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1) // 在最新帧中能够被观测到
         {
             parallax_sum += compensatedParallax2(it_per_id, frame_count);
             parallax_num++;
@@ -114,26 +115,26 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
         ROS_DEBUG("parallax_sum: %lf, parallax_num: %d", parallax_sum, parallax_num);
         ROS_DEBUG("current parallax: %lf", parallax_sum / parallax_num * FOCAL_LENGTH);
         last_average_parallax = parallax_sum / parallax_num * FOCAL_LENGTH;
-        return parallax_sum / parallax_num >= MIN_PARALLAX;
+        return parallax_sum / parallax_num >= MIN_PARALLAX;  //关键帧判断策略2, 平均视差大于设定的最小值
     }
 }
 
 vector<pair<Vector3d, Vector3d>> FeatureManager::getCorresponding(int frame_count_l, int frame_count_r)
-{
+{  //获取路标点在图像帧frame_count_l与图像帧frame_count_r的左归一化相机坐标系的位置pair<Vector3d, Vector3d>
     vector<pair<Vector3d, Vector3d>> corres;
-    for (auto &it : feature)
+    for (auto &it : feature)  //遍历所有路标点
     {
-        if (it.start_frame <= frame_count_l && it.endFrame() >= frame_count_r)
+        if (it.start_frame <= frame_count_l && it.endFrame() >= frame_count_r)  //仅对同时被图像帧frame_count_l和图像帧frame_count_r观测的路标点进行处理
         {
             Vector3d a = Vector3d::Zero(), b = Vector3d::Zero();
             int idx_l = frame_count_l - it.start_frame;
             int idx_r = frame_count_r - it.start_frame;
 
-            a = it.feature_per_frame[idx_l].point;
+            a = it.feature_per_frame[idx_l].point;  //返回路标点在左归一化相机坐标系下的位置坐标
 
             b = it.feature_per_frame[idx_r].point;
             
-            corres.push_back(make_pair(a, b));
+            corres.push_back(make_pair(a, b));  //构建位置pair
         }
     }
     return corres;

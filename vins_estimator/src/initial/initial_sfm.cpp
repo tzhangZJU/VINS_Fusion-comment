@@ -15,7 +15,7 @@ GlobalSFM::GlobalSFM(){}
 
 void GlobalSFM::triangulatePoint(Eigen::Matrix<double, 3, 4> &Pose0, Eigen::Matrix<double, 3, 4> &Pose1,
 						Vector2d &point0, Vector2d &point1, Vector3d &point_3d)
-{
+{  //通过SVD求解的方法来三角化路标点
 	Matrix4d design_matrix = Matrix4d::Zero();
 	design_matrix.row(0) = point0[0] * Pose0.row(2) - Pose0.row(0);
 	design_matrix.row(1) = point0[1] * Pose0.row(2) - Pose0.row(1);
@@ -34,20 +34,20 @@ bool GlobalSFM::solveFrameByPnP(Matrix3d &R_initial, Vector3d &P_initial, int i,
 								vector<SFMFeature> &sfm_f)
 {
 	vector<cv::Point2f> pts_2_vector;
-	vector<cv::Point3f> pts_3_vector;
-	for (int j = 0; j < feature_num; j++)
+	vector<cv::Point3f> pts_3_vector;      // 构造函数中进行了定义feature_num = sfm_f.size();
+	for (int j = 0; j < feature_num; j++)  //遍历sfm_f中的所有路标点
 	{
-		if (sfm_f[j].state != true)
+		if (sfm_f[j].state != true)  //仅对知道三维位置的路标点进行处理
 			continue;
 		Vector2d point2d;
-		for (int k = 0; k < (int)sfm_f[j].observation.size(); k++)
+		for (int k = 0; k < (int)sfm_f[j].observation.size(); k++)  //遍历观测到路标点的所有图像帧
 		{
-			if (sfm_f[j].observation[k].first == i)
+			if (sfm_f[j].observation[k].first == i)  //图像帧i观测到该路标点
 			{
 				Vector2d img_pts = sfm_f[j].observation[k].second;
 				cv::Point2f pts_2(img_pts(0), img_pts(1));
-				pts_2_vector.push_back(pts_2);
-				cv::Point3f pts_3(sfm_f[j].position[0], sfm_f[j].position[1], sfm_f[j].position[2]);
+				pts_2_vector.push_back(pts_2);  //通过左归一化相机坐标系坐标构建2D vector
+				cv::Point3f pts_3(sfm_f[j].position[0], sfm_f[j].position[1], sfm_f[j].position[2]);  //通过路标点世界坐标构建3D vector
 				pts_3_vector.push_back(pts_3);
 				break;
 			}
@@ -56,16 +56,16 @@ bool GlobalSFM::solveFrameByPnP(Matrix3d &R_initial, Vector3d &P_initial, int i,
 	if (int(pts_2_vector.size()) < 15)
 	{
 		printf("unstable features tracking, please slowly move you device!\n");
-		if (int(pts_2_vector.size()) < 10)
+		if (int(pts_2_vector.size()) < 10)  //符合天剑路标点数目不足10个，则认为PnP求解不可靠
 			return false;
 	}
 	cv::Mat r, rvec, t, D, tmp_r;
-	cv::eigen2cv(R_initial, tmp_r);
+	cv::eigen2cv(R_initial, tmp_r);  //旋转平移初始值
 	cv::Rodrigues(tmp_r, rvec);
 	cv::eigen2cv(P_initial, t);
-	cv::Mat K = (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);
+	cv::Mat K = (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);  //2D点在归一化相机坐标系，因此相机内参为单位阵
 	bool pnp_succ;
-	pnp_succ = cv::solvePnP(pts_3_vector, pts_2_vector, K, D, rvec, t, 1);
+	pnp_succ = cv::solvePnP(pts_3_vector, pts_2_vector, K, D, rvec, t, 1);  //OpenCV PnP求解
 	if(!pnp_succ)
 	{
 		return false;
@@ -76,7 +76,7 @@ bool GlobalSFM::solveFrameByPnP(Matrix3d &R_initial, Vector3d &P_initial, int i,
 	cv::cv2eigen(r, R_pnp);
 	MatrixXd T_pnp;
 	cv::cv2eigen(t, T_pnp);
-	R_initial = R_pnp;
+	R_initial = R_pnp;  //PnP求取成功，得到图像帧i的位姿
 	P_initial = T_pnp;
 	return true;
 
@@ -87,14 +87,14 @@ void GlobalSFM::triangulateTwoFrames(int frame0, Eigen::Matrix<double, 3, 4> &Po
 									 vector<SFMFeature> &sfm_f)
 {
 	assert(frame0 != frame1);
-	for (int j = 0; j < feature_num; j++)
+	for (int j = 0; j < feature_num; j++)  //遍历sfm_f中的所有路标点
 	{
-		if (sfm_f[j].state == true)
+		if (sfm_f[j].state == true)  //如果路标点已经初始化，则跳过
 			continue;
 		bool has_0 = false, has_1 = false;
 		Vector2d point0;
 		Vector2d point1;
-		for (int k = 0; k < (int)sfm_f[j].observation.size(); k++)
+		for (int k = 0; k < (int)sfm_f[j].observation.size(); k++)  //遍历观测到路标点的所有图像帧
 		{
 			if (sfm_f[j].observation[k].first == frame0)
 			{
@@ -107,7 +107,7 @@ void GlobalSFM::triangulateTwoFrames(int frame0, Eigen::Matrix<double, 3, 4> &Po
 				has_1 = true;
 			}
 		}
-		if (has_0 && has_1)
+		if (has_0 && has_1)  //frame0和frame1同时观测到路标点
 		{
 			Vector3d point_3d;
 			triangulatePoint(Pose0, Pose1, point0, point1, point_3d);
@@ -133,17 +133,17 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	//cout << "set 0 and " << l << " as known " << endl;
 	// have relative_r relative_t
 	// intial two view
-	q[l].w() = 1;
+	q[l].w() = 1;  //图像帧l与世界坐标系的相对旋转，即q_w_Cl；此时假定图像帧l的相机坐标系即为世界坐标系
 	q[l].x() = 0;
 	q[l].y() = 0;
 	q[l].z() = 0;
 	T[l].setZero();
-	q[frame_num - 1] = q[l] * Quaterniond(relative_R);
+	q[frame_num - 1] = q[l] * Quaterniond(relative_R);  //计算图像帧WINDOW_SIZE与世界坐标系的相对变换，即q_w_c
 	T[frame_num - 1] = relative_T;
 	//cout << "init q_l " << q[l].w() << " " << q[l].vec().transpose() << endl;
 	//cout << "init t_l " << T[l].transpose() << endl;
 
-	//rotate to cam frame
+	//rotate to cam frame  //也即对上述求逆，获得世界坐标系到相机坐标系的旋转矩阵、平移向量
 	Matrix3d c_Rotation[frame_num];
 	Vector3d c_Translation[frame_num];
 	Quaterniond c_Quat[frame_num];
@@ -169,9 +169,9 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	for (int i = l; i < frame_num - 1 ; i++)
 	{
 		// solve pnp
-		if (i > l)
+		if (i > l)  //PnP方法求解l+1~frame_num-1之间图像帧的位姿
 		{
-			Matrix3d R_initial = c_Rotation[i - 1];
+			Matrix3d R_initial = c_Rotation[i - 1];  //上一图像帧位姿作为初始位姿，进行PnP求解
 			Vector3d P_initial = c_Translation[i - 1];
 			if(!solveFrameByPnP(R_initial, P_initial, i, sfm_f))
 				return false;
@@ -182,7 +182,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 			Pose[i].block<3, 1>(0, 3) = c_Translation[i];
 		}
 
-		// triangulate point based on the solve pnp result
+		// triangulate point based on the solve pnp result 三角化l、l+1...frame_num - 2 ——>.frame_num - 1
 		triangulateTwoFrames(i, Pose[i], frame_num - 1, Pose[frame_num - 1], sfm_f);
 	}
 	//3: triangulate l-----l+1 l+2 ... frame_num -2
@@ -210,7 +210,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	{
 		if (sfm_f[j].state == true)
 			continue;
-		if ((int)sfm_f[j].observation.size() >= 2)
+		if ((int)sfm_f[j].observation.size() >= 2)  //对余下的还未初始化、且观测次数不小于2的路标点进行三角初始化
 		{
 			Vector2d point0, point1;
 			int frame_0 = sfm_f[j].observation[0].first;
@@ -244,7 +244,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	ceres::Problem problem;
 	ceres::LocalParameterization* local_parameterization = new ceres::QuaternionParameterization();
 	//cout << " begin full BA " << endl;
-	for (int i = 0; i < frame_num; i++)
+	for (int i = 0; i < frame_num; i++)  //添加优化变量
 	{
 		//double array for ceres
 		c_translation[i][0] = c_Translation[i].x();
@@ -256,17 +256,17 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 		c_rotation[i][3] = c_Quat[i].z();
 		problem.AddParameterBlock(c_rotation[i], 4, local_parameterization);
 		problem.AddParameterBlock(c_translation[i], 3);
-		if (i == l)
+		if (i == l)  //对图像帧l的旋转固定，图像帧l的相机坐标系与世界坐标系固连
 		{
 			problem.SetParameterBlockConstant(c_rotation[i]);
 		}
-		if (i == l || i == frame_num - 1)
+		if (i == l || i == frame_num - 1)  //图像帧l和frame_num - 1的平移量固定
 		{
 			problem.SetParameterBlockConstant(c_translation[i]);
 		}
 	}
 
-	for (int i = 0; i < feature_num; i++)
+	for (int i = 0; i < feature_num; i++)  //对路标点进行遍历，添加残差
 	{
 		if (sfm_f[i].state != true)
 			continue;
@@ -315,7 +315,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	}
 	for (int i = 0; i < (int)sfm_f.size(); i++)
 	{
-		if(sfm_f[i].state)
+		if(sfm_f[i].state)  //存储优化后的路标点在世界坐标系的位置
 			sfm_tracked_points[sfm_f[i].id] = Vector3d(sfm_f[i].position[0], sfm_f[i].position[1], sfm_f[i].position[2]);
 	}
 	return true;

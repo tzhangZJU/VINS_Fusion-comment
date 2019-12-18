@@ -52,9 +52,9 @@ class FeaturePerFrame  //路标点j图像帧时刻i时刻的特征点信息
         is_stereo = true;
     }
     double cur_td;
-    Vector3d point, pointRight;
-    Vector2d uv, uvRight;
-    Vector2d velocity, velocityRight;
+    Vector3d point, pointRight;  //路标点在左相机、右相机的归一化相机坐标系下的位置坐标
+    Vector2d uv, uvRight;  //路标点在左相机、右相机的图像坐标系下的位置（去畸变的位置坐标）
+    Vector2d velocity, velocityRight;  //路标点在左相机、右相机的归一化相机坐标系下的速度
     bool is_stereo;
 };
 

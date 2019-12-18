@@ -21,7 +21,7 @@ Estimator::~Estimator()
 {
     if (MULTIPLE_THREAD)
     {
-        processThread.join();
+        processThread.join();  //TODO(tzhang):等待该线程结束,但该线程的写法有问题，processMeasurements为死循环，不会自己结束，此处可完善修改
         printf("join thread \n");
     }
 }
@@ -94,26 +94,27 @@ void Estimator::clearState()
 
 void Estimator::setParameter()
 {
-    mProcess.lock();
-    for (int i = 0; i < NUM_OF_CAM; i++)
+    mProcess.lock();  // 锁mProcess主要用于processThread线程互斥安全
+    for (int i = 0; i < NUM_OF_CAM; i++)  //设置左右相机与IMU（或体坐标系）之间的变换矩阵
     {
         tic[i] = TIC[i];
         ric[i] = RIC[i];
         cout << " exitrinsic cam " << i << endl  << ric[i] << endl << tic[i].transpose() << endl;
     }
-    f_manager.setRic(ric);
+    f_manager.setRic(ric);  //以下设置图像因子需使用的sqrt_info（即信息矩阵的根号值），该设置假定图像特征点提取存在1.5个像素的误差，
+                            // 存在FOCAL_LENGTH,是因为图像因子残差评估在归一化相机坐标系下进行
     ProjectionTwoFrameOneCamFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     ProjectionTwoFrameTwoCamFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     ProjectionOneFrameTwoCamFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     td = TD;
     g = G;
     cout << "set g " << g.transpose() << endl;
-    featureTracker.readIntrinsicParameter(CAM_NAMES);
+    featureTracker.readIntrinsicParameter(CAM_NAMES);  // 设置相机内参，该参数主要用于特征点跟踪过程
 
     std::cout << "MULTIPLE_THREAD is " << MULTIPLE_THREAD << '\n';
     if (MULTIPLE_THREAD && !initThreadFlag)
     {
-        initThreadFlag = true;
+        initThreadFlag = true;  //根据配置文件，创建新的线程，该线程的回调函数为processMeasurements
         processThread = std::thread(&Estimator::processMeasurements, this);
     }
     mProcess.unlock();
@@ -150,7 +151,7 @@ void Estimator::changeSensorType(int use_imu, int use_stereo)
         printf("use imu %d use stereo %d\n", USE_IMU, STEREO);
     }
     mProcess.unlock();
-    if(restart)
+    if(restart)  //更改传感器配置后，vio系统重启，此处重启与检测到failure后的重启一样，主要包括清除状态、设置参数两步
     {
         clearState();
         setParameter();
@@ -176,8 +177,8 @@ void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
     }
     
     if(MULTIPLE_THREAD)  
-    {     
-        if(inputImageCnt % 2 == 0)  //多线程的时候，仅使用偶数计数的图像特征？ tzhang
+    {   //多线程时，在函数setParameter中，processMeasurements已经作为回调函数、创建了新的线程processThread
+        if(inputImageCnt % 2 == 0)  //TODO(tzhang):多线程的时候，仅使用偶数计数的图像特征？如果计算量足够或者图像帧率较低，可去除此处限制 tzhang
         {
             mBuf.lock();
             featureBuf.push(make_pair(t, featureFrame));
@@ -207,13 +208,13 @@ void Estimator::inputIMU(double t, const Vector3d &linearAcceleration, const Vec
     if (solver_flag == NON_LINEAR)
     {
         mPropagate.lock();
-        fastPredictIMU(t, linearAcceleration, angularVelocity);
-        pubLatestOdometry(latest_P, latest_Q, latest_V, t);
+        fastPredictIMU(t, linearAcceleration, angularVelocity);  //IMU 中值积分预测
+        pubLatestOdometry(latest_P, latest_Q, latest_V, t);  // 发布中值积分预测的状态，主要是p、v、q
         mPropagate.unlock();
     }
 }
 
-void Estimator::inputFeature(double t, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &featureFrame)
+void Estimator::inputFeature(double t, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &featureFrame)  //该函数并未使用
 {
     mBuf.lock();
     featureBuf.push(make_pair(t, featureFrame));
@@ -225,7 +226,7 @@ void Estimator::inputFeature(double t, const map<int, vector<pair<int, Eigen::Ma
 
 
 bool Estimator::getIMUInterval(double t0, double t1, vector<pair<double, Eigen::Vector3d>> &accVector, 
-                                vector<pair<double, Eigen::Vector3d>> &gyrVector)
+                                vector<pair<double, Eigen::Vector3d>> &gyrVector)  //获取t0和t1时间间隔内的加速度和陀螺仪数据，t0和t1一般为相邻图像帧时间戳
 {
     if(accBuf.empty())
     {
@@ -261,24 +262,25 @@ bool Estimator::getIMUInterval(double t0, double t1, vector<pair<double, Eigen::
 
 bool Estimator::IMUAvailable(double t)
 {
-    if(!accBuf.empty() && t <= accBuf.back().first)
+    if(!accBuf.empty() && t <= accBuf.back().first)  // 加速度vector不为空，并且图像帧时间戳不大于加速度时间戳，则认为IMU数据可用
         return true;
     else
         return false;
 }
 
-void Estimator::processMeasurements()
+void Estimator::processMeasurements()  //传感器数据处理入口，也是多线程配置中传入的回调函数
 {
     while (1)
     {
         //printf("process measurments\n");
-        pair<double, map<int, vector<pair<int, Eigen::Matrix<double, 7, 1> > > > > feature;
+        pair<double, map<int, vector<pair<int, Eigen::Matrix<double, 7, 1> > > > > feature; //时间戳（shouble）、路标点编号（int）、相机编号（int）
+                                        //特征点信息（Matrix<double, 7, 1>，归一化相机坐标系坐标（3维）、去畸变图像坐标系坐标（2维）、特征点速度（2维））
         vector<pair<double, Eigen::Vector3d>> accVector, gyrVector;
         if(!featureBuf.empty())
         {
             feature = featureBuf.front();
-            curTime = feature.first + td;
-            while(1)
+            curTime = feature.first + td;  //时间偏差补偿后的图像帧时间戳
+            while(1)  // 循环等待IMU数据，IMU数据可用会break该while循环
             {
                 if ((!USE_IMU  || IMUAvailable(feature.first + td)))
                     break;
@@ -293,15 +295,15 @@ void Estimator::processMeasurements()
             }
             mBuf.lock();
             if(USE_IMU)
-                getIMUInterval(prevTime, curTime, accVector, gyrVector);
+                getIMUInterval(prevTime, curTime, accVector, gyrVector);  //获取两图像帧时间戳之间的加速度和陀螺仪数据
 
             featureBuf.pop();
             mBuf.unlock();
 
             if(USE_IMU)
             {
-                if(!initFirstPoseFlag)
-                    initFirstIMUPose(accVector);  //基于重力，对准第一帧
+                if(!initFirstPoseFlag)  //位姿未初始化，则利用加速度初始化Rs[0]
+                    initFirstIMUPose(accVector);  //基于重力，对准第一帧，即将初始姿态对准到重力加速度方向
                 for(size_t i = 0; i < accVector.size(); i++)
                 {
                     double dt;
@@ -311,20 +313,20 @@ void Estimator::processMeasurements()
                         dt = curTime - accVector[i - 1].first;
                     else
                         dt = accVector[i].first - accVector[i - 1].first;
-                    processIMU(accVector[i].first, dt, accVector[i].second, gyrVector[i].second);
+                    processIMU(accVector[i].first, dt, accVector[i].second, gyrVector[i].second);  //IMU数据处理，主要创建预积分因子、中值积分预测状态
                 }
             }
             mProcess.lock();
-            processImage(feature.second, feature.first);
+            processImage(feature.second, feature.first);  //函数名字不太妥当，后续优化等过程全在该函数实现;优化等过程的入口
             prevTime = curTime;
 
-            printStatistics(*this, 0);
+            printStatistics(*this, 0);  //打印调试信息; 优化后的外参输出也在该函数实现
 
             std_msgs::Header header;
             header.frame_id = "world";
             header.stamp = ros::Time(feature.first);
 
-            pubOdometry(*this, header);
+            pubOdometry(*this, header);  //发布优化后的信息
             pubKeyPoses(*this, header);
             pubCameraPose(*this, header);
             pubPointCloud(*this, header);
@@ -342,7 +344,7 @@ void Estimator::processMeasurements()
 }
 
 
-void Estimator::initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVector)  //利用重力信息，初始化初始的旋转矩阵
+void Estimator::initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVector)  //利用重力信息，初始化最开始状态中的旋转矩阵
 {
     printf("init first imu pose\n");
     initFirstPoseFlag = true;
@@ -381,11 +383,11 @@ void Estimator::processIMU(double t, double dt, const Vector3d &linear_accelerat
         gyr_0 = angular_velocity;
     }
 
-    if (!pre_integrations[frame_count])  // 滑窗中之前不存在该预积分，然后新建； pre_integrations为存储指针的数组
+    if (!pre_integrations[frame_count])  // 滑窗中之前不存在该预积分，然后新建； pre_integrations为存储预积分指针的数组
     {
         pre_integrations[frame_count] = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
     }
-    if (frame_count != 0)
+    if (frame_count != 0)  //不是滑窗中的第一帧
     {
         pre_integrations[frame_count]->push_back(dt, linear_acceleration, angular_velocity);
         //if(solver_flag != NON_LINEAR)
@@ -403,7 +405,7 @@ void Estimator::processIMU(double t, double dt, const Vector3d &linear_accelerat
         Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
         Ps[j] += dt * Vs[j] + 0.5 * dt * dt * un_acc;
         Vs[j] += dt * un_acc;
-    }  //此处的acc_0和gyr_0定义在estimator.h中,注意与integration_base.h中的区别  tzhang
+    }  //此处的acc_0和gyr_0定义在estimator.h中,注意与integration_base.h中的区别；两处的作用都是为了存储之前的加速度和角速度，用于中值积分  tzhang
     acc_0 = linear_acceleration;
     gyr_0 = angular_velocity; 
 }
@@ -419,7 +421,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     }
     else
     {
-        marginalization_flag = MARGIN_SECOND_NEW;  //当前帧为非关键帧，则边缘化当前帧 （PS：称frame_count为当前帧，可能不是很妥当） tzhang
+        marginalization_flag = MARGIN_SECOND_NEW;  //当前帧为非关键帧，则边缘化当前帧 （PS：称frame_count为当前帧，可能不是很妥当，准确来说应该判断的是次新帧） tzhang
         //printf("non-keyframe\n");
     }
 
@@ -433,7 +435,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     all_image_frame.insert(make_pair(header, imageframe));
     tmp_pre_integration = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};  //tmp预积分重新新建初始化 tzhang
 
-    if(ESTIMATE_EXTRINSIC == 2)
+    if(ESTIMATE_EXTRINSIC == 2)  //2,说明估计相机与IMU之间的外参，且未给定外参初始值
     {
         ROS_INFO("calibrating extrinsic param, rotation movement is needed");
         if (frame_count != 0)
@@ -448,7 +450,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                 ROS_WARN_STREAM("initial extrinsic rotation: " << endl << calib_ric);
                 ric[0] = calib_ric;
                 RIC[0] = calib_ric;
-                ESTIMATE_EXTRINSIC = 1;
+                ESTIMATE_EXTRINSIC = 1;  //通过上述计算获取了相机与IMU之间的外参，作为初始值，后续对该外参进行在线估计
             }
         }
     }
@@ -456,15 +458,15 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     if (solver_flag == INITIAL)  //进入初始化步骤 tzhang
     {
         // monocular + IMU initilization
-        if (!STEREO && USE_IMU)
+        if (!STEREO && USE_IMU)  //单目+IMU版本的初始化
         {
             if (frame_count == WINDOW_SIZE)  //滑窗满后才开始初始化 tzhang
             {
                 bool result = false;
-                if(ESTIMATE_EXTRINSIC != 2 && (header - initial_timestamp) > 0.1)
+                if(ESTIMATE_EXTRINSIC != 2 && (header - initial_timestamp) > 0.1)  //当前图像时间戳与上一次初始化的时间戳间隔大于0.1秒、且外参存在初始值才进行初始化操作
                 {
                     result = initialStructure();
-                    initial_timestamp = header;  //更新计算过初始化的时间戳
+                    initial_timestamp = header;  //更新初始化的时间戳
                 }
                 if(result)  //初始化成功
                 {
@@ -480,11 +482,11 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         }
 
         // stereo + IMU initilization
-        if(STEREO && USE_IMU)
+        if(STEREO && USE_IMU)  //双目+IMU版本的初始化
         {
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
             f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
-            if (frame_count == WINDOW_SIZE)
+            if (frame_count == WINDOW_SIZE)    //滑窗满后才开始初始化 tzhang
             {
                 map<double, ImageFrame>::iterator frame_it;
                 int i = 0;
@@ -508,7 +510,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         }
 
         // stereo only initilization
-        if(STEREO && !USE_IMU)
+        if(STEREO && !USE_IMU)  //双目版本的初始化
         {
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
             f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
@@ -524,7 +526,8 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
             }
         }
 
-        if(frame_count < WINDOW_SIZE)
+        if(frame_count < WINDOW_SIZE)  //滑窗未满，下一图像帧时刻的状态量用上一图像帧时刻的状态量进行初始化
+                                       //（PS：processIMU函数中，会对Ps、Vs、Rs用中值积分进行更新）
         {
             frame_count++;
             int prev_frame = frame_count - 1;
@@ -575,7 +578,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         last_P = Ps[WINDOW_SIZE];
         last_R0 = Rs[0];
         last_P0 = Ps[0];
-        updateLatestStates();  //基于中值积分，计算位姿
+        updateLatestStates();  //基于中值积分，计算更新位姿
     }  
 }
 
@@ -583,91 +586,91 @@ bool Estimator::initialStructure()
 {
     TicToc t_sfm;
     //check imu observibility
-    {
+    {//TODO(tzhang):该作用域段主要用于检测IMU运动是否充分，但是目前代码中，运动不充分时并未进行额外处理，此处可改进；或者直接删除该段
         map<double, ImageFrame>::iterator frame_it;
         Vector3d sum_g;
         for (frame_it = all_image_frame.begin(), frame_it++; frame_it != all_image_frame.end(); frame_it++)
-        {
+        {//对除第一帧以外的所有图像帧数据进行遍历,计算加速度均值
             double dt = frame_it->second.pre_integration->sum_dt;
-            Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
-            sum_g += tmp_g;
+            Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;  //通过速度计算，上一图像帧时刻到当前图像帧时刻的平均加速度
+            sum_g += tmp_g;  //平均加速度累积
         }
         Vector3d aver_g;
-        aver_g = sum_g * 1.0 / ((int)all_image_frame.size() - 1);
+        aver_g = sum_g * 1.0 / ((int)all_image_frame.size() - 1);  //计算所有图像帧间的平均加速度均值（注意size-1，因为N个图像帧，只有N-1个平均加速度）
         double var = 0;
         for (frame_it = all_image_frame.begin(), frame_it++; frame_it != all_image_frame.end(); frame_it++)
-        {
+        {//对除第一帧以外的所有图像帧数据进行遍历,计算加速度方差
             double dt = frame_it->second.pre_integration->sum_dt;
             Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
             var += (tmp_g - aver_g).transpose() * (tmp_g - aver_g);
             //cout << "frame g " << tmp_g.transpose() << endl;
         }
-        var = sqrt(var / ((int)all_image_frame.size() - 1));
+        var = sqrt(var / ((int)all_image_frame.size() - 1));  //加速度均方差
         //ROS_WARN("IMU variation %f!", var);
-        if(var < 0.25)
+        if(var < 0.25)  //加速度均方差过小，也即加速度变化不够剧烈，因此判定IMU运动不充分
         {
             ROS_INFO("IMU excitation not enouth!");
             //return false;
         }
     }
     // global sfm
-    Quaterniond Q[frame_count + 1];
-    Vector3d T[frame_count + 1];
-    map<int, Vector3d> sfm_tracked_points;
+    Quaterniond Q[frame_count + 1];  //R_w_c  from camera frame to world frame. tzhang
+    Vector3d T[frame_count + 1];  // t_w_c
+    map<int, Vector3d> sfm_tracked_points;  //观测到的路标点的在世界坐标系的位置，索引为路标点的编号
     vector<SFMFeature> sfm_f;
-    for (auto &it_per_id : f_manager.feature)
+    for (auto &it_per_id : f_manager.feature)  //对所有路标点进行遍历
     {
         int imu_j = it_per_id.start_frame - 1;
         SFMFeature tmp_feature;
         tmp_feature.state = false;
-        tmp_feature.id = it_per_id.feature_id;
-        for (auto &it_per_frame : it_per_id.feature_per_frame)
+        tmp_feature.id = it_per_id.feature_id;  //路标点的编号设置tmp_feature的ID
+        for (auto &it_per_frame : it_per_id.feature_per_frame)  //对观测到路标点j的所有图像帧进行遍历
         {
             imu_j++;
             Vector3d pts_j = it_per_frame.point;
-            tmp_feature.observation.push_back(make_pair(imu_j, Eigen::Vector2d{pts_j.x(), pts_j.y()}));
+            tmp_feature.observation.push_back(make_pair(imu_j, Eigen::Vector2d{pts_j.x(), pts_j.y()}));  //构建路标点在左相机图像坐标系下的观测（去畸变）
         }
         sfm_f.push_back(tmp_feature);
     } 
     Matrix3d relative_R;
     Vector3d relative_T;
     int l;
-    if (!relativePose(relative_R, relative_T, l))
-    {
+    if (!relativePose(relative_R, relative_T, l))  //通过本质矩阵求取滑窗最后一帧（WINDOW_SIZE）到图像帧l的旋转和平移变换
+    {  //共视点大于20个、视差足够大，才进行求取
         ROS_INFO("Not enough features or parallax; Move device around");
         return false;
     }
-    GlobalSFM sfm;
-    if(!sfm.construct(frame_count + 1, Q, T, l,
+    GlobalSFM sfm;  // 通过global sfm求取滑窗中的图像帧位姿，以及观测到的路标点的位置
+    if(!sfm.construct(frame_count + 1, Q, T, l,  //只有frame_count == WINDOW_SIZE才会调用initialStructure，此时frame_count即为WINDOW_SIZE
               relative_R, relative_T,
               sfm_f, sfm_tracked_points))
     {
-        ROS_DEBUG("global SFM failed!");
+        ROS_DEBUG("global SFM failed!");  //global sfm求解失败，对老的图像帧进行边缘化
         marginalization_flag = MARGIN_OLD;
         return false;
     }
 
-    //solve pnp for all frame
+    //solve pnp for all frame 对所有图像帧处理，并得到imu与world之间的变换
     map<double, ImageFrame>::iterator frame_it;
     map<int, Vector3d>::iterator it;
     frame_it = all_image_frame.begin( );
-    for (int i = 0; frame_it != all_image_frame.end( ); frame_it++)
+    for (int i = 0; frame_it != all_image_frame.end( ); frame_it++) //对所有图像帧进行遍历，i为滑窗图像帧index，frame_it为所有图像帧索引； 滑窗图像帧是所有图像帧的子集
     {
         // provide initial guess
         cv::Mat r, rvec, t, D, tmp_r;
-        if((frame_it->first) == Headers[i])
+        if((frame_it->first) == Headers[i])  //该图像帧在滑窗里面
         {
             frame_it->second.is_key_frame = true;
-            frame_it->second.R = Q[i].toRotationMatrix() * RIC[0].transpose();
-            frame_it->second.T = T[i];
+            frame_it->second.R = Q[i].toRotationMatrix() * RIC[0].transpose();  //得到R_w_i
+            frame_it->second.T = T[i];  //TODO(tzhang):没有对imu与cam平移进行处理，是因为两者之间的平移量较小，影响不大？ 可优化
             i++;
-            continue;
+            continue;  //若图像帧在滑窗中，直接利用上述global sfm的结果乘以R_c_i，得到imu到world的变换矩阵即R_w_i
         }
-        if((frame_it->first) > Headers[i])
+        if((frame_it->first) > Headers[i])  // 时间戳比较，仅仅在所有图像的时间戳大于等于滑窗中图像帧时间戳时，才递增滑窗中图像时间戳
         {
             i++;
         }
-        Matrix3d R_inital = (Q[i].inverse()).toRotationMatrix();
+        Matrix3d R_inital = (Q[i].inverse()).toRotationMatrix();  //由于后续进行PnP求解，需要R_c_w与t_c_w作为初值；且以滑窗中临近的图像帧位姿作为初值
         Vector3d P_inital = - R_inital * T[i];
         cv::eigen2cv(R_inital, tmp_r);
         cv::Rodrigues(tmp_r, rvec);
@@ -676,25 +679,25 @@ bool Estimator::initialStructure()
         frame_it->second.is_key_frame = false;
         vector<cv::Point3f> pts_3_vector;
         vector<cv::Point2f> pts_2_vector;
-        for (auto &id_pts : frame_it->second.points)
+        for (auto &id_pts : frame_it->second.points)  //对图像帧观测到的所有路标点进行遍历
         {
-            int feature_id = id_pts.first;
-            for (auto &i_p : id_pts.second)
+            int feature_id = id_pts.first;  //路标点的编号
+            for (auto &i_p : id_pts.second)  //TODO(tzhang):对左右相机进行遍历（PS：该循环放在if判断后更好）
             {
                 it = sfm_tracked_points.find(feature_id);
                 if(it != sfm_tracked_points.end())
                 {
-                    Vector3d world_pts = it->second;
+                    Vector3d world_pts = it->second;  //得到路标点在世界坐标系中的位置
                     cv::Point3f pts_3(world_pts(0), world_pts(1), world_pts(2));
                     pts_3_vector.push_back(pts_3);
-                    Vector2d img_pts = i_p.second.head<2>();
+                    Vector2d img_pts = i_p.second.head<2>();  //得到路标点在归一化相机坐标系中的位置
                     cv::Point2f pts_2(img_pts(0), img_pts(1));
                     pts_2_vector.push_back(pts_2);
                 }
             }
         }
         cv::Mat K = (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);     
-        if(pts_3_vector.size() < 6)
+        if(pts_3_vector.size() < 6)  //该图像帧不在滑窗中，且观测到的、已完成初始化的路标点数不足6个
         {
             cout << "pts_3_vector size " << pts_3_vector.size() << endl;
             ROS_DEBUG("Not enough points for solve pnp !");
@@ -708,12 +711,12 @@ bool Estimator::initialStructure()
         cv::Rodrigues(rvec, r);
         MatrixXd R_pnp,tmp_R_pnp;
         cv::cv2eigen(r, tmp_R_pnp);
-        R_pnp = tmp_R_pnp.transpose();
+        R_pnp = tmp_R_pnp.transpose();  // 通过PnP求解得到R_w_c
         MatrixXd T_pnp;
         cv::cv2eigen(t, T_pnp);
-        T_pnp = R_pnp * (-T_pnp);
-        frame_it->second.R = R_pnp * RIC[0].transpose();
-        frame_it->second.T = T_pnp;
+        T_pnp = R_pnp * (-T_pnp);  // 通过PnP求解得到t_w_c
+        frame_it->second.R = R_pnp * RIC[0].transpose();  //得到R_w_i
+        frame_it->second.T = T_pnp;  //t_w_i （PS：未考虑camera与imu之间的平移）
     }
     if (visualInitialAlign())
         return true;
@@ -730,7 +733,7 @@ bool Estimator::visualInitialAlign()
     TicToc t_g;
     VectorXd x;
     //solve scale
-    bool result = VisualIMUAlignment(all_image_frame, Bgs, g, x);
+    bool result = VisualIMUAlignment(all_image_frame, Bgs, g, x);  //IMU与camera对准，计算更新了陀螺仪偏置bgs、重力向量g、尺度因子s、速度v
     if(!result)
     {
         ROS_DEBUG("solve g failed!");
@@ -740,37 +743,41 @@ bool Estimator::visualInitialAlign()
     // change state
     for (int i = 0; i <= frame_count; i++)
     {
-        Matrix3d Ri = all_image_frame[Headers[i]].R;
+        Matrix3d Ri = all_image_frame[Headers[i]].R;  //Headers[i]存储图像帧时间戳，初始化过程中，仅边缘化老的图像帧，因此留在滑窗中的均为关键帧
         Vector3d Pi = all_image_frame[Headers[i]].T;
-        Ps[i] = Pi;
-        Rs[i] = Ri;
+        Ps[i] = Pi;  //t_w_b
+        Rs[i] = Ri;  //R_w_b
         all_image_frame[Headers[i]].is_key_frame = true;
     }
 
-    double s = (x.tail<1>())(0);
+    double s = (x.tail<1>())(0);  //尺度因子
     for (int i = 0; i <= WINDOW_SIZE; i++)
     {
-        pre_integrations[i]->repropagate(Vector3d::Zero(), Bgs[i]);
+        pre_integrations[i]->repropagate(Vector3d::Zero(), Bgs[i]);  //得到陀螺仪bias新值，预积分重新传播；此处的预积分为Estimator类中的预积分；
+                                                                    //图像帧中预积分的重新传播，在计算bg后已经完成
+                                                                    //TODO(tzhang)：Estimator与图像帧中均维护预积分，重复，是否有必要？待优化
     }
-    for (int i = frame_count; i >= 0; i--)
+    for (int i = frame_count; i >= 0; i--)  //利用尺度因子，对t_w_b的更新；注意此时用到了camera与imu之间的平移量
         Ps[i] = s * Ps[i] - Rs[i] * TIC[0] - (s * Ps[0] - Rs[0] * TIC[0]);
     int kv = -1;
     map<double, ImageFrame>::iterator frame_i;
-    for (frame_i = all_image_frame.begin(); frame_i != all_image_frame.end(); frame_i++)
+    for (frame_i = all_image_frame.begin(); frame_i != all_image_frame.end(); frame_i++)  //更新Estimator中的速度，注意此时的速度值相对于世界坐标系；
+                                                                                          //而初始化过程中的速度，相对于对应的机体坐标系
     {
         if(frame_i->second.is_key_frame)
         {
             kv++;
-            Vs[kv] = frame_i->second.R * x.segment<3>(kv * 3);
+            Vs[kv] = frame_i->second.R * x.segment<3>(kv * 3);  //速度维度为3，故乘以3
         }
     }
 
-    Matrix3d R0 = Utility::g2R(g);
+    Matrix3d R0 = Utility::g2R(g);  //根据基于当前世界坐标系计算得到的重力方向与实际重力方向差异，计算当前世界坐标系的修正量；
+                                    //注意：由于yaw不可观，修正量中剔除了yaw影响，也即仅将世界坐标系的z向与重力方向对齐
     double yaw = Utility::R2ypr(R0 * Rs[0]).x();
     R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
     g = R0 * g;
     //Matrix3d rot_diff = R0 * Rs[0].transpose();
-    Matrix3d rot_diff = R0;
+    Matrix3d rot_diff = R0;  //将世界坐标系与重力方向对齐，之前的世界坐标系Rs[0]根据图像帧定义得到，并未对准到重力方向
     for (int i = 0; i <= frame_count; i++)
     {
         Ps[i] = rot_diff * Ps[i];
@@ -780,20 +787,20 @@ bool Estimator::visualInitialAlign()
     ROS_DEBUG_STREAM("g0     " << g.transpose());
     ROS_DEBUG_STREAM("my R0  " << Utility::R2ypr(Rs[0]).transpose()); 
 
-    f_manager.clearDepth();
-    f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
+    f_manager.clearDepth();  //清除路标点状态，假定所有路标点逆深度均为估计；注意后续优化中路标点采用逆深度，而初始化过程中路标点采用三维坐标
+    f_manager.triangulate(frame_count, Ps, Rs, tic, ric);  //基于SVD的路标点三角化，双目情形：利用左右图像信息； 非双目情形：利用前后帧图像信息
 
     return true;
 }
 
-bool Estimator::relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l)
+bool Estimator::relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l)  //返回值：WINDOW_SIZE变换到l的旋转、平移；及图像帧index
 {
     // find previous frame which contians enough correspondance and parallex with newest frame
-    for (int i = 0; i < WINDOW_SIZE; i++)
+    for (int i = 0; i < WINDOW_SIZE; i++)  //遍历滑窗中的图像帧（除去最后一个图像帧WINDOW_SIZE）
     {
         vector<pair<Vector3d, Vector3d>> corres;
-        corres = f_manager.getCorresponding(i, WINDOW_SIZE);
-        if (corres.size() > 20)
+        corres = f_manager.getCorresponding(i, WINDOW_SIZE);  //获取图像帧i与最后一个图像帧共视路标点在各自左归一化相机坐标系的坐标
+        if (corres.size() > 20)  //图像帧i与最后一个图像帧之间的共视点数目大于20个才进行后续处理
         {
             double sum_parallax = 0;
             double average_parallax;
@@ -802,12 +809,12 @@ bool Estimator::relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l)
                 Vector2d pts_0(corres[j].first(0), corres[j].first(1));
                 Vector2d pts_1(corres[j].second(0), corres[j].second(1));
                 double parallax = (pts_0 - pts_1).norm();
-                sum_parallax = sum_parallax + parallax;
+                sum_parallax = sum_parallax + parallax;  //计算归一化相机坐标系下的视差和
 
             }
-            average_parallax = 1.0 * sum_parallax / int(corres.size());
+            average_parallax = 1.0 * sum_parallax / int(corres.size());  //归一化相机坐标系下的平均视差
             if(average_parallax * 460 > 30 && m_estimator.solveRelativeRT(corres, relative_R, relative_T))
-            {
+            {  //上述的460表示焦距f（尽管并不太严谨，具体相机焦距并不一定是460），从而在图像坐标系下评估视差
                 l = i;
                 ROS_DEBUG("average_parallax %f choose l %d and newest frame to triangulate the whole structure", average_parallax * 460, l);
                 return true;

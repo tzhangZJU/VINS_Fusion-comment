@@ -8,7 +8,7 @@
  *
  * Author: Qin Tong (qintonguav@gmail.com)
  *******************************************************/
-
+//该文件存储基于SFM进行初始化的相关处理类  tzhang
 #pragma once 
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
@@ -22,14 +22,12 @@
 using namespace Eigen;
 using namespace std;
 
-
-
 struct SFMFeature
 {
     bool state;
-    int id;
-    vector<pair<int,Vector2d>> observation;
-    double position[3];
+    int id;  //路标点的编号
+    vector<pair<int,Vector2d>> observation;  //路标点左归一化相机坐标系下的坐标（int表示观测到该路标点图像帧的索引；Vector2d表示路标点的坐标位置）
+    double position[3];  //路标点在世界坐标系位置坐标
     double depth;
 };
 
@@ -53,14 +51,14 @@ struct ReprojectionError3D
 	}
 
 	static ceres::CostFunction* Create(const double observed_x,
-	                                   const double observed_y) 
+	                                   const double observed_y) //单例模式
 	{
 	  return (new ceres::AutoDiffCostFunction<
 	          ReprojectionError3D, 2, 4, 3, 3>(
 	          	new ReprojectionError3D(observed_x,observed_y)));
 	}
 
-	double observed_u;
+	double observed_u;  //观测值
 	double observed_v;
 };
 
