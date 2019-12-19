@@ -27,7 +27,7 @@ class IntegrationBase
           sum_dt{0.0}, delta_p{Eigen::Vector3d::Zero()}, delta_q{Eigen::Quaterniond::Identity()}, delta_v{Eigen::Vector3d::Zero()}
 
     {
-        noise = Eigen::Matrix<double, 18, 18>::Zero();  // 中值积分，噪声项有6项；欧拉积分，噪声项为4项 tzhang
+        noise = Eigen::Matrix<double, 18, 18>::Zero();  // 中值积分，噪声项有6项；欧拉积分，噪声项为4项（对应vins-mono论文公式9的nt） tzhang
         noise.block<3, 3>(0, 0) =  (ACC_N * ACC_N) * Eigen::Matrix3d::Identity();
         noise.block<3, 3>(3, 3) =  (GYR_N * GYR_N) * Eigen::Matrix3d::Identity();
         noise.block<3, 3>(6, 6) =  (ACC_N * ACC_N) * Eigen::Matrix3d::Identity();

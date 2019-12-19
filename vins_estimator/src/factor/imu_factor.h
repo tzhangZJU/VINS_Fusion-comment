@@ -18,7 +18,8 @@
 
 #include <ceres/ceres.h>
 
-class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>  //残差15维； 状态向量四组
+class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>  //残差15维； 状态向量四组（i时刻位姿，i时刻速度与偏置，i+1时刻位姿，i+1时刻速度与偏置）
+                                                                    //位姿为四元数+平移，共7维；速度+陀螺仪偏置+加速度偏置，共9维
 {
   public:
     IMUFactor() = delete;
@@ -26,7 +27,7 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>  //残差15维
     {
     }
     virtual bool Evaluate(double const *const *parameters, double *residuals, double **jacobians) const
-    {
+    {//factor主要完成残差、雅克比矩阵的解析计算
 
         Eigen::Vector3d Pi(parameters[0][0], parameters[0][1], parameters[0][2]);
         Eigen::Quaterniond Qi(parameters[0][6], parameters[0][3], parameters[0][4], parameters[0][5]);
@@ -67,16 +68,18 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>  //残差15维
 #endif
 
         Eigen::Map<Eigen::Matrix<double, 15, 1>> residual(residuals);
-        residual = pre_integration->evaluate(Pi, Qi, Vi, Bai, Bgi,
+        residual = pre_integration->evaluate(Pi, Qi, Vi, Bai, Bgi,  //预积分残差计算
                                             Pj, Qj, Vj, Baj, Bgj);
 
         Eigen::Matrix<double, 15, 15> sqrt_info = Eigen::LLT<Eigen::Matrix<double, 15, 15>>(pre_integration->covariance.inverse()).matrixL().transpose();
         //sqrt_info.setIdentity();
         residual = sqrt_info * residual;
 
-        if (jacobians)
+        //计算残差对状态向量的雅克比，该雅克比主要用在优化迭代过程；残差的公式见vins-mono论文公式（24）
+        if (jacobians)  //jacobian为二维数组，根据数组指针是否为0（nullptr），判断是否需要计算雅克比
         {
             double sum_dt = pre_integration->sum_dt;
+            //对应vins-mono论文公式（12）下面那段描述；后续会使用相关量
             Eigen::Matrix3d dp_dba = pre_integration->jacobian.template block<3, 3>(O_P, O_BA);
             Eigen::Matrix3d dp_dbg = pre_integration->jacobian.template block<3, 3>(O_P, O_BG);
 
@@ -92,7 +95,7 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>  //残差15维
 ///                ROS_BREAK();
             }
 
-            if (jacobians[0])
+            if (jacobians[0])  //公式（24）所示残差对k时刻位姿的雅克比
             {
                 Eigen::Map<Eigen::Matrix<double, 15, 7, Eigen::RowMajor>> jacobian_pose_i(jacobians[0]);
                 jacobian_pose_i.setZero();
@@ -118,7 +121,7 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>  //残差15维
                     //ROS_BREAK();
                 }
             }
-            if (jacobians[1])
+            if (jacobians[1])  //公式（24）所示残差对k时刻速度+陀螺仪偏置+加速度偏置的雅克比
             {
                 Eigen::Map<Eigen::Matrix<double, 15, 9, Eigen::RowMajor>> jacobian_speedbias_i(jacobians[1]);
                 jacobian_speedbias_i.setZero();
@@ -147,7 +150,7 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>  //残差15维
                 //ROS_ASSERT(fabs(jacobian_speedbias_i.maxCoeff()) < 1e8);
                 //ROS_ASSERT(fabs(jacobian_speedbias_i.minCoeff()) < 1e8);
             }
-            if (jacobians[2])
+            if (jacobians[2])  //公式（24）所示残差对k+1时刻位姿的雅克比
             {
                 Eigen::Map<Eigen::Matrix<double, 15, 7, Eigen::RowMajor>> jacobian_pose_j(jacobians[2]);
                 jacobian_pose_j.setZero();
@@ -166,7 +169,7 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>  //残差15维
                 //ROS_ASSERT(fabs(jacobian_pose_j.maxCoeff()) < 1e8);
                 //ROS_ASSERT(fabs(jacobian_pose_j.minCoeff()) < 1e8);
             }
-            if (jacobians[3])
+            if (jacobians[3])  //公式（24）所示残差对k+1时刻速度+陀螺仪偏置+加速度偏置的雅克比
             {
                 Eigen::Map<Eigen::Matrix<double, 15, 9, Eigen::RowMajor>> jacobian_speedbias_j(jacobians[3]);
                 jacobian_speedbias_j.setZero();
