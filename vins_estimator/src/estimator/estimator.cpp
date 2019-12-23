@@ -1200,7 +1200,7 @@ void Estimator::optimization()
         //图像部分
         {
             int feature_index = -1;
-            for (auto &it_per_id : f_manager.feature)
+            for (auto &it_per_id : f_manager.feature)  //对路标点的遍历
             {
                 it_per_id.used_num = it_per_id.feature_per_frame.size();
                 if (it_per_id.used_num < 4)
@@ -1209,22 +1209,23 @@ void Estimator::optimization()
                 ++feature_index;
 
                 int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
-                if (imu_i != 0)
+                if (imu_i != 0)  //仅处理第一次观测的图像帧为第0帧的情形
                     continue;
 
                 Vector3d pts_i = it_per_id.feature_per_frame[0].point;
 
-                for (auto &it_per_frame : it_per_id.feature_per_frame)
+                for (auto &it_per_frame : it_per_id.feature_per_frame)  //对观测到路标点的图像帧的遍历
                 {
                     imu_j++;
                     if(imu_i != imu_j)
                     {
                         Vector3d pts_j = it_per_frame.point;
+                        //左相机在i时刻、在j时刻分别观测到路标点
                         ProjectionTwoFrameOneCamFactor *f_td = new ProjectionTwoFrameOneCamFactor(pts_i, pts_j, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocity,
                                                                           it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td);
                         ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(f_td, loss_function,
                                                                                         vector<double *>{para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Feature[feature_index], para_Td[0]},
-                                                                                        vector<int>{0, 3});  //边缘化para_Pose[imu_i]与para_Feature[feature_index]
+                                                                                        vector<int>{0, 3});  //边缘化para_Pose[0]与para_Feature[feature_index]
                         marginalization_info->addResidualBlockInfo(residual_block_info);
                     }
                     if(STEREO && it_per_frame.is_stereo)
@@ -1232,15 +1233,17 @@ void Estimator::optimization()
                         Vector3d pts_j_right = it_per_frame.pointRight;
                         if(imu_i != imu_j)
                         {
+                            //左相机在i时刻、右相机在j时刻分别观测到路标点
                             ProjectionTwoFrameTwoCamFactor *f = new ProjectionTwoFrameTwoCamFactor(pts_i, pts_j_right, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocityRight,
                                                                           it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td);
                             ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(f, loss_function,
                                                                                            vector<double *>{para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Ex_Pose[1], para_Feature[feature_index], para_Td[0]},
-                                                                                           vector<int>{0, 4});  //边缘化para_Pose[imu_i]与para_Feature[feature_index]
+                                                                                           vector<int>{0, 4});  //边缘化para_Pose[0]与para_Feature[feature_index]
                             marginalization_info->addResidualBlockInfo(residual_block_info);
                         }
                         else
                         {
+                            //左相机在i时刻、右相机在i时刻分别观测到路标点
                             ProjectionOneFrameTwoCamFactor *f = new ProjectionOneFrameTwoCamFactor(pts_i, pts_j_right, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocityRight,
                                                                           it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td);
                             ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(f, loss_function,
@@ -1261,10 +1264,10 @@ void Estimator::optimization()
         marginalization_info->marginalize();
         ROS_DEBUG("marginalization %f ms", t_margin.toc());
 
-        std::unordered_map<long, double *> addr_shift;  //仅仅改变滑窗double部分地址映射，具体值的更改在optimization开始处vector2double函数完成；记住边缘化仅仅改变A和b，不改变状态向量
+        std::unordered_map<long, double *> addr_shift;  //仅仅改变滑窗double部分地址映射，具体值的通过slideWindow和vector2double函数完成；记住边缘化仅仅改变A和b，不改变状态向量
         for (int i = 1; i <= WINDOW_SIZE; i++)  //最老图像帧数据丢弃，从i=1开始遍历
         {
-            addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
+            addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];  // i数据保存到1-1指向的地址，滑窗向前移动
             if(USE_IMU)
                 addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
         }
@@ -1294,7 +1297,7 @@ void Estimator::optimization()
                 for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size()); i++)
                 {
                     ROS_ASSERT(last_marginalization_parameter_blocks[i] != para_SpeedBias[WINDOW_SIZE - 1]);
-                    if (last_marginalization_parameter_blocks[i] == para_Pose[WINDOW_SIZE - 1])  //TODO(tzhang):仅仅只边缘化WINDOW_SIZE - 1位姿变量？特征点、图像数据未进行处理？ why tzhang
+                    if (last_marginalization_parameter_blocks[i] == para_Pose[WINDOW_SIZE - 1])  //TODO(tzhang):仅仅只边缘化WINDOW_SIZE - 1位姿变量， 对其特征点、图像数据不进行处理
                         drop_set.push_back(i);
                 }
                 // construct new marginlization_factor
@@ -1308,7 +1311,7 @@ void Estimator::optimization()
 
             TicToc t_pre_margin;
             ROS_DEBUG("begin marginalization");
-            marginalization_info->preMarginalize();
+            marginalization_info->preMarginalize();  //构建parameter_block_data
             ROS_DEBUG("end pre marginalization, %f ms", t_pre_margin.toc());
 
             TicToc t_margin;
@@ -1316,18 +1319,18 @@ void Estimator::optimization()
             marginalization_info->marginalize();
             ROS_DEBUG("end marginalization, %f ms", t_margin.toc());
             
-            std::unordered_map<long, double *> addr_shift;  // 
+            std::unordered_map<long, double *> addr_shift;  //仅仅改变滑窗double部分地址映射，具体值的更改在slideWindow和vector2double函数完成
             for (int i = 0; i <= WINDOW_SIZE; i++)
             {
-                if (i == WINDOW_SIZE - 1)
+                if (i == WINDOW_SIZE - 1)  //WINDOW_SIZE - 1会被边缘化，不保存
                     continue;
-                else if (i == WINDOW_SIZE)
+                else if (i == WINDOW_SIZE)  //WINDOW_SIZE数据保存到WINDOW_SIZE-1指向的地址
                 {
                     addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
                     if(USE_IMU)
                         addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
                 }
-                else
+                else  //其余的保存地址不变
                 {
                     addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i];
                     if(USE_IMU)
@@ -1340,7 +1343,7 @@ void Estimator::optimization()
             addr_shift[reinterpret_cast<long>(para_Td[0])] = para_Td[0];
 
             
-            vector<double *> parameter_blocks = marginalization_info->getParameterBlocks(addr_shift);
+            vector<double *> parameter_blocks = marginalization_info->getParameterBlocks(addr_shift);  //提取保存的数据
             if (last_marginalization_info)
                 delete last_marginalization_info;
             last_marginalization_info = marginalization_info;

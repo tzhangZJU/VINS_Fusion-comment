@@ -116,7 +116,7 @@ void MarginalizationInfo::addResidualBlockInfo(ResidualBlockInfo *residual_block
     }
 }
 
-void MarginalizationInfo::preMarginalize()  //构建parameter_block_data
+void MarginalizationInfo::preMarginalize()  //构建parameter_block_data <变量的内存地址， 变量数据>
 {
     for (auto it : factors)
     {
@@ -319,12 +319,12 @@ std::vector<double *> MarginalizationInfo::getParameterBlocks(std::unordered_map
 
     for (const auto &it : parameter_block_idx)
     {
-        if (it.second >= m)  //排序大于m的部分为保留的部分，将该部分状态向量的localSize、index、数据进行保留
+        if (it.second >= m)  //排序大于m的部分为保留的部分，将该部分状态向量的localSize、index、数据、保存数据的地址进行保留
         {
             keep_block_size.push_back(parameter_block_size[it.first]);
             keep_block_idx.push_back(parameter_block_idx[it.first]);
             keep_block_data.push_back(parameter_block_data[it.first]);
-            keep_block_addr.push_back(addr_shift[it.first]);
+            keep_block_addr.push_back(addr_shift[it.first]);  //仅仅记录会保存数据的地址
         }
     }
     sum_block_size = std::accumulate(std::begin(keep_block_size), std::end(keep_block_size), 0);
@@ -356,6 +356,7 @@ bool MarginalizationFactor::Evaluate(double const *const *parameters, double *re
     //}
     int n = marginalization_info->n;  //保留的部分
     int m = marginalization_info->m;  //边缘化的部分
+    // delta_x的计算
     Eigen::VectorXd dx(n);
     for (int i = 0; i < static_cast<int>(marginalization_info->keep_block_size.size()); i++)
     {
@@ -376,9 +377,11 @@ bool MarginalizationFactor::Evaluate(double const *const *parameters, double *re
             }
         }
     }
-    //残差的计算
+    //残差的更新
     Eigen::Map<Eigen::VectorXd>(residuals, n) = marginalization_info->linearized_residuals + marginalization_info->linearized_jacobians * dx;  //相当于残差更新
-    if (jacobians)  //计算雅克比
+
+    //雅克比的计算
+    if (jacobians)
     {
 
         for (int i = 0; i < static_cast<int>(marginalization_info->keep_block_size.size()); i++)
