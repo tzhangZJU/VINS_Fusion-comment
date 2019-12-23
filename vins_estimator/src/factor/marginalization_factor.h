@@ -19,7 +19,7 @@
 #include "../utility/utility.h"
 #include "../utility/tic_toc.h"
 
-const int NUM_THREADS = 4;
+const int NUM_THREADS = 4;  //边缘化过程中构建A、b的线程数目
 
 struct ResidualBlockInfo  //模拟ceres中的costfunction的操作，主要完成残差与雅克比计算
 {
@@ -30,8 +30,8 @@ struct ResidualBlockInfo  //模拟ceres中的costfunction的操作，主要完�
 
     ceres::CostFunction *cost_function;
     ceres::LossFunction *loss_function;
-    std::vector<double *> parameter_blocks;
-    std::vector<int> drop_set;
+    std::vector<double *> parameter_blocks;  //优化变量数据
+    std::vector<int> drop_set;  //待边缘化的优化变量ID
 
     double **raw_jacobians;  //雅克比
     std::vector<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> jacobians;
@@ -64,13 +64,13 @@ class MarginalizationInfo
     void marginalize();
     std::vector<double *> getParameterBlocks(std::unordered_map<long, double *> &addr_shift);
 
-    std::vector<ResidualBlockInfo *> factors;
-    int m, n;  //m表征需要边缘化的数量，n表征保留的数量 tzhang
-    //下述unordered_map关键字long使用的是状态向量的地址
-    std::unordered_map<long, int> parameter_block_size; //global size  存储每个状态向量的尺度
+    std::vector<ResidualBlockInfo *> factors;  //所有观测量
+    int m, n;  //m表征需要边缘化的变量的localSize和，n表征保留的变量的localSize和， 二者均以localSize计算表示 tzhang
+    //下述unordered_map关键字long使用的是状态向量的内存地址
+    std::unordered_map<long, int> parameter_block_size; //global size  存储每个状态向量的尺寸 <变量的内存地址，变量的localSize>
     int sum_block_size;
-    std::unordered_map<long, int> parameter_block_idx; //local size  存储状态向量的索引。前面m个为将被边缘化的参数块的尺寸；通过参数块地址进行索引
-    std::unordered_map<long, double *> parameter_block_data;  //存储状态向量的数据
+    std::unordered_map<long, int> parameter_block_idx; //local size  存储每个状态向量的索引。<变量的内存地址， 构建矩阵的索引（结果是前m为边缘化部分，后n为保留部分）>
+    std::unordered_map<long, double *> parameter_block_data;  //存储状态向量的数据 <变量的内存地址， 变量数据>
 
     // 存储边缘化后最终保留的量 tzhang
     std::vector<int> keep_block_size; //global size

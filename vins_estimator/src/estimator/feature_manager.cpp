@@ -260,7 +260,7 @@ bool FeatureManager::solvePoseByPnP(Eigen::Matrix3d &R, Eigen::Vector3d &P,
 void FeatureManager::initFramePoseByPnP(int frameCnt, Vector3d Ps[], Matrix3d Rs[], Vector3d tic[], Matrix3d ric[])
 {
 
-    if(frameCnt > 0)  //对第一帧图像不做处理 tzhang
+    if(frameCnt > 0)  //对第一帧图像不做处理；因为此时路标点还未三角化，需要利用第一帧双目图像，进行路标点三角化 tzhang
     {
         vector<cv::Point2f> pts2D;
         vector<cv::Point3f> pts3D;
@@ -269,7 +269,7 @@ void FeatureManager::initFramePoseByPnP(int frameCnt, Vector3d Ps[], Matrix3d Rs
             if (it_per_id.estimated_depth > 0)  //该路标点完成了初始化，使用初始化完成的路标点，获取3D-2D点对  tzhang
             {
                 int index = frameCnt - it_per_id.start_frame;
-                if((int)it_per_id.feature_per_frame.size() >= index + 1)  //Why 该判断的缘由还未明白？ tzhang  该路标点从start_frame图像帧到frameCnt对应的图像帧都能被观测到
+                if((int)it_per_id.feature_per_frame.size() >= index + 1)  //tzhang  该路标点从start_frame图像帧到frameCnt对应的图像帧都能被观测到
                 {
                     //路标点在IMU坐标系坐标，第一次看到该路标点的图像帧时刻 tzhang  // 前面描述错误，此时不存在imu，应该是在start_frame图像帧左相机坐标系的坐标
                     Vector3d ptsInCam = ric[0] * (it_per_id.feature_per_frame[0].point * it_per_id.estimated_depth) + tic[0];
@@ -309,7 +309,7 @@ void FeatureManager::triangulate(int frameCnt, Vector3d Ps[], Matrix3d Rs[], Vec
         if (it_per_id.estimated_depth > 0)
             continue;
 
-        if(STEREO && it_per_id.feature_per_frame[0].is_stereo)
+        if(STEREO && it_per_id.feature_per_frame[0].is_stereo)  //双目版本，利用双目图像对路标点进行三角化
         {
             int imu_i = it_per_id.start_frame;
             Eigen::Matrix<double, 3, 4> leftPose;  //第一帧，左相机到世界坐标系的位姿 tzhang
@@ -349,7 +349,7 @@ void FeatureManager::triangulate(int frameCnt, Vector3d Ps[], Matrix3d Rs[], Vec
             */
             continue;
         }
-        else if(it_per_id.feature_per_frame.size() > 1)
+        else if(it_per_id.feature_per_frame.size() > 1)  //单目版本，利用前后帧图像对路标点进行三角化
         {
             int imu_i = it_per_id.start_frame;
             Eigen::Matrix<double, 3, 4> leftPose;

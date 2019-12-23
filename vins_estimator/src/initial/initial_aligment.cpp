@@ -42,7 +42,8 @@ void solveGyroscopeBias(map<double, ImageFrame> &all_image_frame, Vector3d* Bgs)
     for (frame_i = all_image_frame.begin(); next(frame_i) != all_image_frame.end( ); frame_i++) //由于Bg发生了变化，需要对图像帧对应的预积分进行再次传播计算
     {
         frame_j = next(frame_i);
-        frame_j->second.pre_integration->repropagate(Vector3d::Zero(), Bgs[0]);
+        frame_j->second.pre_integration->repropagate(Vector3d::Zero(), Bgs[0]);  //TODO(tzhang): Why：solveGyroscopeBias函数中全部是基于Bgs[0]进行的预积分 tzhang
+        //而Estimator中的预积分并不是这样处理的，具体见pre_integrations[i]->repropagate(Vector3d::Zero(), Bgs[i]);
     }
 }
 

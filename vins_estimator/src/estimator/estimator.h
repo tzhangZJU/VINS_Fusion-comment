@@ -161,7 +161,7 @@ class Estimator
 
     MarginalizationInfo *last_marginalization_info;
 
-    vector<double *> last_marginalization_parameter_blocks;  //保存上一次边缘化后，保留的状态向量
+    vector<double *> last_marginalization_parameter_blocks;  //保存上一次边缘化后，保留的状态向量的内存地址
     map<double, ImageFrame> all_image_frame;  //存储所有的图像帧数据
     IntegrationBase *tmp_pre_integration;
 

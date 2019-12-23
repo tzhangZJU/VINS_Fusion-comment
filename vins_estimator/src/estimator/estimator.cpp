@@ -273,7 +273,7 @@ void Estimator::processMeasurements()  //传感器数据处理入口，也是多
     while (1)
     {
         //printf("process measurments\n");
-        pair<double, map<int, vector<pair<int, Eigen::Matrix<double, 7, 1> > > > > feature; //时间戳（shouble）、路标点编号（int）、相机编号（int）
+        pair<double, map<int, vector<pair<int, Eigen::Matrix<double, 7, 1> > > > > feature; //时间戳（double）、路标点编号（int）、相机编号（int）
                                         //特征点信息（Matrix<double, 7, 1>，归一化相机坐标系坐标（3维）、去畸变图像坐标系坐标（2维）、特征点速度（2维））
         vector<pair<double, Eigen::Vector3d>> accVector, gyrVector;
         if(!featureBuf.empty())
@@ -484,9 +484,9 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         // stereo + IMU initilization
         if(STEREO && USE_IMU)  //双目+IMU版本的初始化
         {
-            f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
+            f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);  //滑窗满之前，通过PnP求解图像帧之间的位姿，通过三角化初始化路标点（逆深度）tzhang
             f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
-            if (frame_count == WINDOW_SIZE)    //滑窗满后才开始初始化 tzhang
+            if (frame_count == WINDOW_SIZE)    //滑窗满后开始优化处理 tzhang
             {
                 map<double, ImageFrame>::iterator frame_it;
                 int i = 0;
@@ -499,7 +499,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                 solveGyroscopeBias(all_image_frame, Bgs);
                 for (int i = 0; i <= WINDOW_SIZE; i++)
                 {
-                    pre_integrations[i]->repropagate(Vector3d::Zero(), Bgs[i]);  //Why：solveGyroscopeBias函数中全部是基于Bgs[0]进行的预积分 tzhang
+                    pre_integrations[i]->repropagate(Vector3d::Zero(), Bgs[i]);
                 }
                 optimization();
                 updateLatestStates();
@@ -654,7 +654,8 @@ bool Estimator::initialStructure()
     map<double, ImageFrame>::iterator frame_it;
     map<int, Vector3d>::iterator it;
     frame_it = all_image_frame.begin( );
-    for (int i = 0; frame_it != all_image_frame.end( ); frame_it++) //对所有图像帧进行遍历，i为滑窗图像帧index，frame_it为所有图像帧索引； 滑窗图像帧是所有图像帧的子集
+    for (int i = 0; frame_it != all_image_frame.end( ); frame_it++) //对所有图像帧进行遍历，i为滑窗图像帧index，frame_it为所有图像帧索引； 
+                                                                    //滑窗图像帧是所有图像帧的子集,由于滑窗中可能通过MARGIN_SECOND_NEW，边缘化某些中间帧
     {
         // provide initial guess
         cv::Mat r, rvec, t, D, tmp_r;
@@ -716,7 +717,7 @@ bool Estimator::initialStructure()
         cv::cv2eigen(t, T_pnp);
         T_pnp = R_pnp * (-T_pnp);  // 通过PnP求解得到t_w_c
         frame_it->second.R = R_pnp * RIC[0].transpose();  //得到R_w_i
-        frame_it->second.T = T_pnp;  //t_w_i （PS：未考虑camera与imu之间的平移）
+        frame_it->second.T = T_pnp;  //t_w_i （PS：未考虑camera与imu之间的平移,由于尺度因子未知，此时不用考虑；在求解出尺度因子后，会考虑）
     }
     if (visualInitialAlign())
         return true;
@@ -799,7 +800,7 @@ bool Estimator::relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l)
     for (int i = 0; i < WINDOW_SIZE; i++)  //遍历滑窗中的图像帧（除去最后一个图像帧WINDOW_SIZE）
     {
         vector<pair<Vector3d, Vector3d>> corres;
-        corres = f_manager.getCorresponding(i, WINDOW_SIZE);  //获取图像帧i与最后一个图像帧共视路标点在各自左归一化相机坐标系的坐标
+        corres = f_manager.getCorresponding(i, WINDOW_SIZE);  //获取图像帧i与最后一个图像帧（WINDOW_SIZE）共视路标点在各自左归一化相机坐标系的坐标
         if (corres.size() > 20)  //图像帧i与最后一个图像帧之间的共视点数目大于20个才进行后续处理
         {
             double sum_parallax = 0;
@@ -1171,7 +1172,7 @@ void Estimator::optimization()
             vector<int> drop_set;
             for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size()); i++)
             {
-                if (last_marginalization_parameter_blocks[i] == para_Pose[0] || 
+                if (last_marginalization_parameter_blocks[i] == para_Pose[0] ||  //丢弃滑窗中第一帧时刻的位姿、速度、偏置
                     last_marginalization_parameter_blocks[i] == para_SpeedBias[0])
                     drop_set.push_back(i);
             }
@@ -1261,7 +1262,7 @@ void Estimator::optimization()
         ROS_DEBUG("marginalization %f ms", t_margin.toc());
 
         std::unordered_map<long, double *> addr_shift;  //仅仅改变滑窗double部分地址映射，具体值的更改在optimization开始处vector2double函数完成；记住边缘化仅仅改变A和b，不改变状态向量
-        for (int i = 1; i <= WINDOW_SIZE; i++)
+        for (int i = 1; i <= WINDOW_SIZE; i++)  //最老图像帧数据丢弃，从i=1开始遍历
         {
             addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
             if(USE_IMU)
@@ -1289,18 +1290,18 @@ void Estimator::optimization()
             vector2double();
             if (last_marginalization_info && last_marginalization_info->valid)
             {
-                vector<int> drop_set;
+                vector<int> drop_set;  //记录需要丢弃的变量在last_marginalization_parameter_blocks中的索引
                 for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size()); i++)
                 {
                     ROS_ASSERT(last_marginalization_parameter_blocks[i] != para_SpeedBias[WINDOW_SIZE - 1]);
-                    if (last_marginalization_parameter_blocks[i] == para_Pose[WINDOW_SIZE - 1])
+                    if (last_marginalization_parameter_blocks[i] == para_Pose[WINDOW_SIZE - 1])  //TODO(tzhang):仅仅只边缘化WINDOW_SIZE - 1位姿变量？特征点、图像数据未进行处理？ why tzhang
                         drop_set.push_back(i);
                 }
                 // construct new marginlization_factor
                 MarginalizationFactor *marginalization_factor = new MarginalizationFactor(last_marginalization_info);
                 ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(marginalization_factor, NULL,
                                                                                last_marginalization_parameter_blocks,
-                                                                               drop_set);  //仅仅只根据先验信息边缘化WINDOW_SIZE - 1变量？特征点、图像数据未进行处理？ why tzhang
+                                                                               drop_set);
 
                 marginalization_info->addResidualBlockInfo(residual_block_info);
             }
@@ -1315,7 +1316,7 @@ void Estimator::optimization()
             marginalization_info->marginalize();
             ROS_DEBUG("end marginalization, %f ms", t_margin.toc());
             
-            std::unordered_map<long, double *> addr_shift;
+            std::unordered_map<long, double *> addr_shift;  // 
             for (int i = 0; i <= WINDOW_SIZE; i++)
             {
                 if (i == WINDOW_SIZE - 1)
