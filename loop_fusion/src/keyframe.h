@@ -38,7 +38,7 @@ public:
   BriefExtractor(const std::string &pattern_file);
 
   DVision::BRIEF m_brief;
-};
+};  // end class BriefExtractor
 
 class KeyFrame
 {
@@ -83,8 +83,6 @@ public:
 	double getLoopRelativeYaw();
 	Eigen::Quaterniond getLoopRelativeQ();
 
-
-
 	double time_stamp; 
 	int index;
 	int local_index;
@@ -100,16 +98,16 @@ public:
 	vector<cv::Point2f> point_2d_uv;
 	vector<cv::Point2f> point_2d_norm;
 	vector<double> point_id;
-	vector<cv::KeyPoint> keypoints;
-	vector<cv::KeyPoint> keypoints_norm;
-	vector<cv::KeyPoint> window_keypoints;
-	vector<BRIEF::bitset> brief_descriptors;
-	vector<BRIEF::bitset> window_brief_descriptors;
+	vector<cv::KeyPoint> keypoints;  //额外提取的关键点
+	vector<cv::KeyPoint> keypoints_norm;  //归一化相机坐标系下的xy坐标
+	vector<cv::KeyPoint> window_keypoints;  //定位部分原有的关键点
+	vector<BRIEF::bitset> brief_descriptors;  //额外提取角点对应的描述子
+	vector<BRIEF::bitset> window_brief_descriptors;  //定位部分原有角点对应的描述子
 	bool has_fast_point;
 	int sequence;
 
 	bool has_loop;
 	int loop_index;
 	Eigen::Matrix<double, 8, 1 > loop_info;
-};
+};  // end class KeyFrame
 

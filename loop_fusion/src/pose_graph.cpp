@@ -83,8 +83,8 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     }
     
     cur_kf->getVioPose(vio_P_cur, vio_R_cur);
-    vio_P_cur = w_r_vio * vio_P_cur + w_t_vio;
-    vio_R_cur = w_r_vio *  vio_R_cur;
+    vio_P_cur = w_r_vio * vio_P_cur + w_t_vio;  // 结果为imu坐标系（体坐标系）相对于当前图像帧坐标系的变换 tzhang
+    vio_R_cur = w_r_vio *  vio_R_cur;  // R_cur_b = R_cur_w*R_w_b
     cur_kf->updateVioPose(vio_P_cur, vio_R_cur);
     cur_kf->index = global_index;
     global_index++;
@@ -384,7 +384,7 @@ int PoseGraph::detectLoop(KeyFrame* keyframe, int frame_index)
             {          
                 find_loop = true;
                 int tmp_index = ret[i].Id;
-                if (DEBUG_IMAGE && 0)
+                if (DEBUG_IMAGE && 0)  //不会执行
                 {
                     auto it = image_pool.find(tmp_index);
                     cv::Mat tmp_image = (it->second).clone();

@@ -85,7 +85,7 @@ void new_sequence()
     }
     posegraph.posegraph_visualization->reset();
     posegraph.publish();
-    m_buf.lock();
+    m_buf.lock();  //清除图像、点云、位姿数据
     while(!image_buf.empty())
         image_buf.pop();
     while(!point_buf.empty())
@@ -97,7 +97,7 @@ void new_sequence()
     m_buf.unlock();
 }
 
-void image_callback(const sensor_msgs::ImageConstPtr &image_msg)
+void image_callback(const sensor_msgs::ImageConstPtr &image_msg)  //对原始图像的处理 tzhang
 {
     //ROS_INFO("image_callback!");
     m_buf.lock();
@@ -108,7 +108,7 @@ void image_callback(const sensor_msgs::ImageConstPtr &image_msg)
     // detect unstable camera stream
     if (last_image_time == -1)
         last_image_time = image_msg->header.stamp.toSec();
-    else if (image_msg->header.stamp.toSec() - last_image_time > 1.0 || image_msg->header.stamp.toSec() < last_image_time)
+    else if (image_msg->header.stamp.toSec() - last_image_time > 1.0 || image_msg->header.stamp.toSec() < last_image_time)  //对图像时间戳的校验判断
     {
         ROS_WARN("image discontinue! detect a new sequence!");
         new_sequence();
@@ -189,7 +189,7 @@ void pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
     */
 }
 
-void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
+void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)  //输入为IMU在世界坐标系下的位姿 tzhang
 {
     //ROS_INFO("vio_callback!");
     Vector3d vio_t(pose_msg->pose.pose.position.x, pose_msg->pose.pose.position.y, pose_msg->pose.pose.position.z);
@@ -199,7 +199,7 @@ void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
     vio_q.y() = pose_msg->pose.pose.orientation.y;
     vio_q.z() = pose_msg->pose.pose.orientation.z;
 
-    vio_t = posegraph.w_r_vio * vio_t + posegraph.w_t_vio;
+    vio_t = posegraph.w_r_vio * vio_t + posegraph.w_t_vio;  //状态向量中的旋转和平移在current sequence frame表示 tzhang
     vio_q = posegraph.w_r_vio *  vio_q;
 
     vio_t = posegraph.r_drift * vio_t + posegraph.t_drift;
@@ -219,7 +219,7 @@ void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
 
     Vector3d vio_t_cam;
     Quaterniond vio_q_cam;
-    vio_t_cam = vio_t + vio_q * tic;
+    vio_t_cam = vio_t + vio_q * tic;  //相机的位姿在current sequence frame表示 tzhang
     vio_q_cam = vio_q * qic;        
 
     cameraposevisual.reset();
@@ -250,7 +250,7 @@ void process()
         sensor_msgs::PointCloudConstPtr point_msg = NULL;
         nav_msgs::Odometry::ConstPtr pose_msg = NULL;
 
-        // find out the messages with same time stamp
+        // find out the messages with same time stamp 根据时间戳提取图像、点云、位姿信息tzhang
         m_buf.lock();
         if(!image_buf.empty() && !point_buf.empty() && !pose_buf.empty())
         {
@@ -331,7 +331,7 @@ void process()
                                      pose_msg->pose.pose.orientation.x,
                                      pose_msg->pose.pose.orientation.y,
                                      pose_msg->pose.pose.orientation.z).toRotationMatrix();
-            if((T - last_t).norm() > SKIP_DIS)
+            if((T - last_t).norm() > SKIP_DIS)  //TODO(tzhang):SKIP_DIS == 0, 前述时间对准后，基本对每一帧图像帧都在处理？？ tzhang
             {
                 vector<cv::Point3f> point_3d; 
                 vector<cv::Point2f> point_2d_uv; 
@@ -340,7 +340,7 @@ void process()
 
                 for (unsigned int i = 0; i < point_msg->points.size(); i++)
                 {
-                    cv::Point3f p_3d;
+                    cv::Point3f p_3d;  //路标点在世界坐标系下的位置
                     p_3d.x = point_msg->points[i].x;
                     p_3d.y = point_msg->points[i].y;
                     p_3d.z = point_msg->points[i].z;
@@ -348,11 +348,12 @@ void process()
 
                     cv::Point2f p_2d_uv, p_2d_normal;
                     double p_id;
-                    p_2d_normal.x = point_msg->channels[i].values[0];
-                    p_2d_normal.y = point_msg->channels[i].values[1];
-                    p_2d_uv.x = point_msg->channels[i].values[2];
-                    p_2d_uv.y = point_msg->channels[i].values[3];
-                    p_id = point_msg->channels[i].values[4];
+                    //路标点在次新帧图像帧中的图像信息
+                    p_2d_normal.x = point_msg->channels[i].values[0];  //point.x()
+                    p_2d_normal.y = point_msg->channels[i].values[1];  //point.y()
+                    p_2d_uv.x = point_msg->channels[i].values[2];  //uv.x()
+                    p_2d_uv.y = point_msg->channels[i].values[3];  //uv.y()
+                    p_id = point_msg->channels[i].values[4];  //feature_id
                     point_2d_normal.push_back(p_2d_normal);
                     point_2d_uv.push_back(p_2d_uv);
                     point_id.push_back(p_id);
@@ -360,8 +361,8 @@ void process()
                     //printf("u %f, v %f \n", p_2d_uv.x, p_2d_uv.y);
                 }
 
-                KeyFrame* keyframe = new KeyFrame(pose_msg->header.stamp.toSec(), frame_index, T, R, image,
-                                   point_3d, point_2d_uv, point_2d_normal, point_id, sequence);   
+                KeyFrame* keyframe = new KeyFrame(pose_msg->header.stamp.toSec(), frame_index, T, R, image,  //构造keyframe类指针
+                                   point_3d, point_2d_uv, point_2d_normal, point_id, sequence);   //时间戳、frame_index、t_w_b、R_w_b、图像帧、图像帧观测的三维点（世界坐标系）、uv、point.xy（归一化相机坐标系）、路标点编号、sequence
                 m_process.lock();
                 start_flag = 1;
                 posegraph.addKeyFrame(keyframe, 1);
@@ -480,16 +481,16 @@ int main(int argc, char **argv)
 
     ros::Subscriber sub_vio = n.subscribe("/vins_estimator/odometry", 2000, vio_callback);
     ros::Subscriber sub_image = n.subscribe(IMAGE_TOPIC, 2000, image_callback);
-    ros::Subscriber sub_pose = n.subscribe("/vins_estimator/keyframe_pose", 2000, pose_callback);
-    ros::Subscriber sub_extrinsic = n.subscribe("/vins_estimator/extrinsic", 2000, extrinsic_callback);
-    ros::Subscriber sub_point = n.subscribe("/vins_estimator/keyframe_point", 2000, point_callback);
-    ros::Subscriber sub_margin_point = n.subscribe("/vins_estimator/margin_cloud", 2000, margin_point_callback);
-
+    ros::Subscriber sub_pose = n.subscribe("/vins_estimator/keyframe_pose", 2000, pose_callback);  //将关键帧（WINDOW_SIZE - 2）位姿信息存入buf tzhang
+    ros::Subscriber sub_extrinsic = n.subscribe("/vins_estimator/extrinsic", 2000, extrinsic_callback);  //订阅左相机与imu之间的外参
+    ros::Subscriber sub_point = n.subscribe("/vins_estimator/keyframe_point", 2000, point_callback);  //订阅关键帧（WINDOW_SIZE - 2）观测到的路标点信息，修正后再发布、可视化 tzhang
+    ros::Subscriber sub_margin_point = n.subscribe("/vins_estimator/margin_cloud", 2000, margin_point_callback);  //订阅边缘点（已经初始化、第一次观测的图像帧在第0帧，被观测的图像帧数小于2） tzhang
+                                                                                                                    //修正后再发布、可视化
     pub_match_img = n.advertise<sensor_msgs::Image>("match_image", 1000);
     pub_camera_pose_visual = n.advertise<visualization_msgs::MarkerArray>("camera_pose_visual", 1000);
     pub_point_cloud = n.advertise<sensor_msgs::PointCloud>("point_cloud_loop_rect", 1000);
     pub_margin_cloud = n.advertise<sensor_msgs::PointCloud>("margin_cloud_loop_rect", 1000);
-    pub_odometry_rect = n.advertise<nav_msgs::Odometry>("odometry_rect", 1000);
+    pub_odometry_rect = n.advertise<nav_msgs::Odometry>("odometry_rect", 1000);  //发布在current sequence frame表示的里程计信息  tzhang
 
     std::thread measurement_process;
     std::thread keyboard_command_process;

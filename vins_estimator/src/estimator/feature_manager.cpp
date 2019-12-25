@@ -502,7 +502,7 @@ void FeatureManager::removeBack()
 
         if (it->start_frame != 0)  //第一次观测到路标点的图像帧不是被边缘化的滑窗中（也即第0帧）；此时仅将观测到路标点的图像帧索引递减
             it->start_frame--;
-        else  //第一次观测到路标点的图像帧将被边缘化
+        else  //第一次观测到路标点的图像帧将被删除
         {
             it->feature_per_frame.erase(it->feature_per_frame.begin());
             if (it->feature_per_frame.size() == 0)
@@ -527,6 +527,7 @@ void FeatureManager::removeFront(int frame_count)
             if (it->endFrame() < frame_count - 1)  //路标点在被边缘化的图像帧（WINDOW_SIZE-1）和滑窗中最后的图像帧（WINDOW_SIZE）中未被观测
                 continue;
             it->feature_per_frame.erase(it->feature_per_frame.begin() + j);  //剔除观测到路标点的图像帧中即将被边缘化的图像帧（即WINDOW_SIZE-1）
+                                                                            //相当于直接丢掉了被边缘化图像帧的观测
             if (it->feature_per_frame.size() == 0)
                 feature.erase(it);
             //TODO(tzhang):BUG若路标点的第一次观测图像帧恰好为被边缘化的图像帧（WINDOW_SIZE-1），并且还被图像帧（WINDOW_SIZE）观测到，没有进行shift depth的处理？？

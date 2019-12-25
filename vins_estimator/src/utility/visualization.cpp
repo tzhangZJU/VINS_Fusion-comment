@@ -287,7 +287,7 @@ void pubPointCloud(const Estimator &estimator, const std_msgs::Header &header)
         //        continue;
 
         if (it_per_id.start_frame == 0 && it_per_id.feature_per_frame.size() <= 2 
-            && it_per_id.solve_flag == 1 )
+            && it_per_id.solve_flag == 1 )  //发布点的满足的条件：已经初始化、第一次观测的图像帧在第0帧，被观测的图像帧数小于2 tzhang
         {
             int imu_i = it_per_id.start_frame;
             Vector3d pts_i = it_per_id.feature_per_frame[0].point * it_per_id.estimated_depth;
@@ -357,7 +357,7 @@ void pubTF(const Estimator &estimator, const std_msgs::Header &header)
 void pubKeyframe(const Estimator &estimator)
 {
     // pub camera pose, 2D-3D points of keyframe
-    if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR && estimator.marginalization_flag == 0)
+    if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR && estimator.marginalization_flag == 0)  //当MARGIN_OLD时才发布 tzhang
     {
         int i = WINDOW_SIZE - 2;
         //Vector3d P = estimator.Ps[i] + estimator.Rs[i] * estimator.tic[0];
@@ -376,7 +376,7 @@ void pubKeyframe(const Estimator &estimator)
         odometry.pose.pose.orientation.w = R.w();
         //printf("time: %f t: %f %f %f r: %f %f %f %f\n", odometry.header.stamp.toSec(), P.x(), P.y(), P.z(), R.w(), R.x(), R.y(), R.z());
 
-        pub_keyframe_pose.publish(odometry);
+        pub_keyframe_pose.publish(odometry);  //发布关键帧位姿信息 tzhang
 
 
         sensor_msgs::PointCloud point_cloud;
@@ -396,16 +396,16 @@ void pubKeyframe(const Estimator &estimator)
                 p.x = w_pts_i(0);
                 p.y = w_pts_i(1);
                 p.z = w_pts_i(2);
-                point_cloud.points.push_back(p);
+                point_cloud.points.push_back(p);  //路标点在世界坐标系下的位置
 
-                int imu_j = WINDOW_SIZE - 2 - it_per_id.start_frame;
+                int imu_j = WINDOW_SIZE - 2 - it_per_id.start_frame;  
                 sensor_msgs::ChannelFloat32 p_2d;
                 p_2d.values.push_back(it_per_id.feature_per_frame[imu_j].point.x());
                 p_2d.values.push_back(it_per_id.feature_per_frame[imu_j].point.y());
                 p_2d.values.push_back(it_per_id.feature_per_frame[imu_j].uv.x());
                 p_2d.values.push_back(it_per_id.feature_per_frame[imu_j].uv.y());
                 p_2d.values.push_back(it_per_id.feature_id);
-                point_cloud.channels.push_back(p_2d);
+                point_cloud.channels.push_back(p_2d);  //路标点在WINDOW_SIZE - 2图像帧中的信息
             }
 
         }

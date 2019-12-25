@@ -330,7 +330,7 @@ void Estimator::processMeasurements()  //传感器数据处理入口，也是多
             pubKeyPoses(*this, header);
             pubCameraPose(*this, header);
             pubPointCloud(*this, header);
-            pubKeyframe(*this);
+            pubKeyframe(*this);  //TODO(tzhang): 当MARGIN_OLD时，也即次新帧为关键帧; 将次新帧发布出去，但是前面关键帧判断条件较为宽松;可将关键帧选取更严格
             pubTF(*this, header);
             mProcess.unlock();
         }
@@ -1058,7 +1058,7 @@ void Estimator::optimization()
 
 
     //构建残差
-    /*******边缘化残差*******/
+    /*******先验残差*******/
     if (last_marginalization_info && last_marginalization_info->valid)  
     {
         // construct new marginlization_factor  会调用marginalization_factor——>Evaluate计算边缘化后的残差与雅克比
@@ -1095,14 +1095,14 @@ void Estimator::optimization()
 
         int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
         
-        Vector3d pts_i = it_per_id.feature_per_frame[0].point;
+        Vector3d pts_i = it_per_id.feature_per_frame[0].point;  //用于计算估计值
 
         for (auto &it_per_frame : it_per_id.feature_per_frame)  //遍历观测到路标点的图像帧
         {
             imu_j++;
             if (imu_i != imu_j)
             {
-                Vector3d pts_j = it_per_frame.point;
+                Vector3d pts_j = it_per_frame.point;  //测量值
                 //左相机在i时刻和j时刻分别观测到路标点
                 ProjectionTwoFrameOneCamFactor *f_td = new ProjectionTwoFrameOneCamFactor(pts_i, pts_j, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocity,
                                                                  it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td);
@@ -1153,7 +1153,7 @@ void Estimator::optimization()
     ROS_DEBUG("Iterations : %d", static_cast<int>(summary.iterations.size()));
     //printf("solver costs: %f \n", t_solver.toc());
 
-    double2vector();  //ceres优化方便使用的形式转存至状态向量
+    double2vector();  //优化求解完成，ceres优化方便使用的数组形式转存至状态向量
     //printf("frame_count: %d \n", frame_count);
 
     if(frame_count < WINDOW_SIZE)  //滑窗未满
@@ -1164,15 +1164,15 @@ void Estimator::optimization()
     if (marginalization_flag == MARGIN_OLD)   //将最老的图像帧数据边缘化； tzhang
     {
         MarginalizationInfo *marginalization_info = new MarginalizationInfo();
-        vector2double();
+        vector2double();  //状态向量转存为数组形式
 
-        // 先验部分
+        // 先验部分，基于先验残差，边缘化滑窗中第0帧时刻的状态向量
         if (last_marginalization_info && last_marginalization_info->valid)
         {
             vector<int> drop_set;
             for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size()); i++)
             {
-                if (last_marginalization_parameter_blocks[i] == para_Pose[0] ||  //丢弃滑窗中第一帧时刻的位姿、速度、偏置
+                if (last_marginalization_parameter_blocks[i] == para_Pose[0] ||  //丢弃滑窗中第0帧时刻的位姿、速度、偏置
                     last_marginalization_parameter_blocks[i] == para_SpeedBias[0])
                     drop_set.push_back(i);
             }
@@ -1181,10 +1181,13 @@ void Estimator::optimization()
             ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(marginalization_factor, NULL,
                                                                            last_marginalization_parameter_blocks,
                                                                            drop_set);
+            // ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(marginalization_factor, NULL,
+            //                                                                vector<double *>{para_Pose[0], para_SpeedBias[0]},
+            //                                                                vector<int>{0, 1});  
             marginalization_info->addResidualBlockInfo(residual_block_info);
         }
 
-        //imu 预积分部分
+        //imu 预积分部分，基于第0帧与第1帧之间的预积分残差，边缘化第0帧状态向量
         if(USE_IMU)
         {
             if (pre_integrations[1]->sum_dt < 10.0)
@@ -1197,7 +1200,7 @@ void Estimator::optimization()
             }
         }
 
-        //图像部分
+        //图像部分，基于与第0帧相关的图像残差，边缘化第一次观测的图像帧为第0帧的路标点和第0帧
         {
             int feature_index = -1;
             for (auto &it_per_id : f_manager.feature)  //对路标点的遍历
@@ -1264,10 +1267,12 @@ void Estimator::optimization()
         marginalization_info->marginalize();
         ROS_DEBUG("marginalization %f ms", t_margin.toc());
 
-        std::unordered_map<long, double *> addr_shift;  //仅仅改变滑窗double部分地址映射，具体值的通过slideWindow和vector2double函数完成；记住边缘化仅仅改变A和b，不改变状态向量
+        //仅仅改变滑窗double部分地址映射，具体值的通过slideWindow和vector2double函数完成；记住边缘化仅仅改变A和b，不改变状态向量
+        //由于第0帧观测到的路标点全被边缘化，即边缘化后保存的状态向量中没有路标点;因此addr_shift无需添加路标点
+        std::unordered_map<long, double *> addr_shift;
         for (int i = 1; i <= WINDOW_SIZE; i++)  //最老图像帧数据丢弃，从i=1开始遍历
         {
-            addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];  // i数据保存到1-1指向的地址，滑窗向前移动
+            addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];  // i数据保存到1-1指向的地址，滑窗向前移动一格
             if(USE_IMU)
                 addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
         }
@@ -1285,7 +1290,7 @@ void Estimator::optimization()
     }
     else   //将次新的图像帧数据边缘化； tzhang
     {
-        if (last_marginalization_info &&
+        if (last_marginalization_info && //存在先验边缘化信息时才进行次新帧边缘化;否则仅仅通过slidewindow，丢弃次新帧
             std::count(std::begin(last_marginalization_parameter_blocks), std::end(last_marginalization_parameter_blocks), para_Pose[WINDOW_SIZE - 1]))
         {
 
@@ -1318,8 +1323,11 @@ void Estimator::optimization()
             ROS_DEBUG("begin marginalization");
             marginalization_info->marginalize();
             ROS_DEBUG("end marginalization, %f ms", t_margin.toc());
-            
-            std::unordered_map<long, double *> addr_shift;  //仅仅改变滑窗double部分地址映射，具体值的更改在slideWindow和vector2double函数完成
+
+            //仅仅改变滑窗double部分地址映射，具体值的更改在slideWindow和vector2double函数完成
+            //由于边缘化次新帧，边缘化的状态向量仅为para_Pose[WINDOW_SIZE - 1];而保留的状态向量为在上一次边缘化得到的保留部分基础上、剔除para_Pose[WINDOW_SIZE - 1]的结果;
+            //因此，边缘化次新帧得到的保留部分也未包含路标点，因此addr_shift无需添加路标点
+            std::unordered_map<long, double *> addr_shift;
             for (int i = 0; i <= WINDOW_SIZE; i++)
             {
                 if (i == WINDOW_SIZE - 1)  //WINDOW_SIZE - 1会被边缘化，不保存
@@ -1476,7 +1484,7 @@ void Estimator::slideWindowOld()
         f_manager.removeBackShiftDepth(R0, P0, R1, P1);
     }
     else
-        f_manager.removeBack();  //还未初始化，只是更新第一次观测到路标点的图像帧的索引  tzhang
+        f_manager.removeBack();  //初始化未完成，只是更新第一次观测到路标点的图像帧的索引  tzhang
 }
 
 

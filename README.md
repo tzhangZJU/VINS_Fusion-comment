@@ -3,8 +3,12 @@
 ](https://github.com/HKUST-Aerial-Robotics/VINS-Fusion).
 Some documents are collected from internet,such as<br/>
 - [从零开始手写VIO](https://www.shenlanxueyuan.com/my/course/174)
-- [<崔华坤--VINS论文推导及代码解析_V13_190317>](https://github.com/StevenCui)
-- <马朝伟--VINS-Mono详解>
+- [崔华坤--VINS论文推导及代码解析_V13_190317](https://github.com/StevenCui)
+- 马朝伟--VINS-Mono详解
+- [Stefan Leutenegger--Keyframe-based visual–inertial odometry using nonlinear optimization(VINS参考该论文的滑窗边缘化)](https://journals.sagepub.com/doi/abs/10.1177/0278364914554813)
+- [郑帆--OKVIS笔记：边缘化原理和策略](https://fzheng.me/2018/03/22/okvis-marginalization-base/)
+- [贺一家--SLAM中的marginalization 和 Schur complement](https://blog.csdn.net/heyijia0327/article/details/52822104)
+- [游振兴--vins 的margin factor](https://zhuanlan.zhihu.com/p/51330624)
 
 # VINS-Fusion
 ## An optimization-based multi-sensor state estimator

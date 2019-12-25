@@ -64,8 +64,8 @@ public:
 	double yaw_drift;
 	Matrix3d r_drift;
 	// world frame( base sequence or first sequence)<----> cur sequence frame  
-	Vector3d w_t_vio;
-	Matrix3d w_r_vio;
+	Vector3d w_t_vio;  //t_cur_w
+	Matrix3d w_r_vio;  //R_cur_w from world frame to current sequence frame tzhang
 
 
 private:
@@ -97,7 +97,7 @@ private:
 	ros::Publisher pub_base_path;
 	ros::Publisher pub_pose_graph;
 	ros::Publisher pub_path[10];
-};
+};  // end class PoseGraph
 
 template <typename T> inline
 void QuaternionInverse(const T q[4], T q_inverse[4])
@@ -134,10 +134,10 @@ class AngleLocalParameterization {
     return (new ceres::AutoDiffLocalParameterization<AngleLocalParameterization,
                                                      1, 1>);
   }
-};
+};  // end class AngleLocalParameterization
 
 template <typename T> 
-void YawPitchRollToRotationMatrix(const T yaw, const T pitch, const T roll, T R[9])
+void YawPitchRollToRotationMatrix(const T yaw, const T pitch, const T roll, T R[9])  //基于欧拉角计算的旋转矩阵
 {
 
 	T y = yaw / T(180.0) * T(M_PI);
@@ -157,7 +157,7 @@ void YawPitchRollToRotationMatrix(const T yaw, const T pitch, const T roll, T R[
 };
 
 template <typename T> 
-void RotationMatrixTranspose(const T R[9], T inv_R[9])
+void RotationMatrixTranspose(const T R[9], T inv_R[9])  //转置
 {
 	inv_R[0] = R[0];
 	inv_R[1] = R[3];
@@ -171,7 +171,7 @@ void RotationMatrixTranspose(const T R[9], T inv_R[9])
 };
 
 template <typename T> 
-void RotationMatrixRotatePoint(const T R[9], const T t[3], T r_t[3])
+void RotationMatrixRotatePoint(const T R[9], const T t[3], T r_t[3])  //旋转矩阵坐标变换
 {
 	r_t[0] = R[0] * t[0] + R[1] * t[1] + R[2] * t[2];
 	r_t[1] = R[3] * t[0] + R[4] * t[1] + R[5] * t[2];
@@ -201,7 +201,7 @@ struct FourDOFError
 		T t_i_ij[3];
 		RotationMatrixRotatePoint(i_R_w, t_w_ij, t_i_ij);
 
-		residuals[0] = (t_i_ij[0] - T(t_x));
+		residuals[0] = (t_i_ij[0] - T(t_x));  //t_x, t_y, t_z, relative_yaw为观测值
 		residuals[1] = (t_i_ij[1] - T(t_y));
 		residuals[2] = (t_i_ij[2] - T(t_z));
 		residuals[3] = NormalizeAngle(yaw_j[0] - yaw_i[0] - T(relative_yaw));
@@ -213,7 +213,7 @@ struct FourDOFError
 									   const double relative_yaw, const double pitch_i, const double roll_i) 
 	{
 	  return (new ceres::AutoDiffCostFunction<
-	          FourDOFError, 4, 1, 3, 1, 3>(
+	          FourDOFError, 4, 1, 3, 1, 3>(   //残差维度：4; 优化变量维度：yaw_i:1;  ti:3;  yaw_j:1;  tj:3;
 	          	new FourDOFError(t_x, t_y, t_z, relative_yaw, pitch_i, roll_i)));
 	}
 
@@ -331,4 +331,4 @@ struct RelativeRTError
 	double q_w, q_x, q_y, q_z;
 	double t_var, q_var;
 
-};
+};  // end class PoseGraph

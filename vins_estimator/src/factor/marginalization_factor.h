@@ -30,8 +30,8 @@ struct ResidualBlockInfo  //模拟ceres中的costfunction的操作，主要完�
 
     ceres::CostFunction *cost_function;
     ceres::LossFunction *loss_function;
-    std::vector<double *> parameter_blocks;  //优化变量数据
-    std::vector<int> drop_set;  //待边缘化的优化变量ID
+    std::vector<double *> parameter_blocks;  //与该残差相关的优化变量数据
+    std::vector<int> drop_set;  //待边缘化的优化变量ID（PS:待边缘化的优化变量是与残差相关的优化变量数据的子集）
 
     double **raw_jacobians;  //雅克比
     std::vector<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> jacobians;
@@ -77,7 +77,7 @@ class MarginalizationInfo
     std::vector<int> keep_block_idx;  //local size
     std::vector<double *> keep_block_data;
 
-    Eigen::MatrixXd linearized_jacobians;  //边缘化得到的雅克比  tzhang
+    Eigen::MatrixXd linearized_jacobians;  //边缘化得到的雅克比  tzhang  该雅克比和残差用于后续先验因子MarginalizationFactor的Evaluate中计算雅克比与残差
     Eigen::VectorXd linearized_residuals;  //边缘化得到的残差  tzhang
     const double eps = 1e-8;
     bool valid;

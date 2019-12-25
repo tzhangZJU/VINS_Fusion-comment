@@ -25,6 +25,7 @@ static void reduceVector(vector<Derived> &v, vector<uchar> status)
 KeyFrame::KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3d &_vio_R_w_i, cv::Mat &_image,
 		           vector<cv::Point3f> &_point_3d, vector<cv::Point2f> &_point_2d_uv, vector<cv::Point2f> &_point_2d_norm,
 		           vector<double> &_point_id, int _sequence)
+				   //时间戳、frame_index、t_w_b、R_w_b、图像帧、图像帧观测的三维点（世界坐标系）、uv、point.xy（归一化相机坐标系）、路标点编号、sequence
 {
 	time_stamp = _time_stamp;
 	index = _index;
@@ -35,7 +36,7 @@ KeyFrame::KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3
 	origin_vio_T = vio_T_w_i;		
 	origin_vio_R = vio_R_w_i;
 	image = _image.clone();
-	cv::resize(image, thumbnail, cv::Size(80, 60));
+	cv::resize(image, thumbbnail, cv::Size(80, 60));
 	point_3d = _point_3d;
 	point_2d_uv = _point_2d_uv;
 	point_2d_norm = _point_2d_norm;
@@ -83,7 +84,7 @@ KeyFrame::KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3
 }
 
 
-void KeyFrame::computeWindowBRIEFPoint()
+void KeyFrame::computeWindowBRIEFPoint()  //定位部分原有角点对应的描述子
 {
 	BriefExtractor extractor(BRIEF_PATTERN_FILE.c_str());
 	for(int i = 0; i < (int)point_2d_uv.size(); i++)
@@ -95,12 +96,12 @@ void KeyFrame::computeWindowBRIEFPoint()
 	extractor(image, window_keypoints, window_brief_descriptors);
 }
 
-void KeyFrame::computeBRIEFPoint()
+void KeyFrame::computeBRIEFPoint()  //额外提取角点对应的描述子
 {
 	BriefExtractor extractor(BRIEF_PATTERN_FILE.c_str());
 	const int fast_th = 20; // corner detector response threshold
 	if(1)
-		cv::FAST(image, keypoints, fast_th, true);
+		cv::FAST(image, keypoints, fast_th, true);  //额外提取fast角点
 	else
 	{
 		vector<cv::Point2f> tmp_pts;
@@ -116,10 +117,10 @@ void KeyFrame::computeBRIEFPoint()
 	for (int i = 0; i < (int)keypoints.size(); i++)
 	{
 		Eigen::Vector3d tmp_p;
-		m_camera->liftProjective(Eigen::Vector2d(keypoints[i].pt.x, keypoints[i].pt.y), tmp_p);
+		m_camera->liftProjective(Eigen::Vector2d(keypoints[i].pt.x, keypoints[i].pt.y), tmp_p);  //图像平面坐标到归一化相机坐标系
 		cv::KeyPoint tmp_norm;
 		tmp_norm.pt = cv::Point2f(tmp_p.x()/tmp_p.z(), tmp_p.y()/tmp_p.z());
-		keypoints_norm.push_back(tmp_norm);
+		keypoints_norm.push_back(tmp_norm);  //归一化的坐标
 	}
 }
 
@@ -515,8 +516,8 @@ int KeyFrame::HammingDis(const BRIEF::bitset &a, const BRIEF::bitset &b)
 
 void KeyFrame::getVioPose(Eigen::Vector3d &_T_w_i, Eigen::Matrix3d &_R_w_i)
 {
-    _T_w_i = vio_T_w_i;
-    _R_w_i = vio_R_w_i;
+    _T_w_i = vio_T_w_i;  //t_w_b imu相对与世界坐标系的变换 tzhang
+    _R_w_i = vio_R_w_i;  //R_w_b
 }
 
 void KeyFrame::getPose(Eigen::Vector3d &_T_w_i, Eigen::Matrix3d &_R_w_i)
@@ -531,12 +532,12 @@ void KeyFrame::updatePose(const Eigen::Vector3d &_T_w_i, const Eigen::Matrix3d &
     R_w_i = _R_w_i;
 }
 
-void KeyFrame::updateVioPose(const Eigen::Vector3d &_T_w_i, const Eigen::Matrix3d &_R_w_i)
+void KeyFrame::updateVioPose(const Eigen::Vector3d &_T_w_i, const Eigen::Matrix3d &_R_w_i)  //R_cur_b  输入为imu坐标系（体坐标系）相对于当前图像帧坐标系的变换
 {
 	vio_T_w_i = _T_w_i;
-	vio_R_w_i = _R_w_i;
+	vio_R_w_i = _R_w_i;  //R_cur_b
 	T_w_i = vio_T_w_i;
-	R_w_i = vio_R_w_i;
+	R_w_i = vio_R_w_i;  //R_cur_b
 }
 
 Eigen::Vector3d KeyFrame::getLoopRelativeT()
